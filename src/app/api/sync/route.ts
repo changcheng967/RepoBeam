@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
   });
 
   // Trigger sync in background
-  syncRepo(repo.owner, repo.name)
+  syncRepo(repo.owner, repo.name, force)
     .then(() => {
       const status = syncStatus.get(fullName);
       syncStatus.set(fullName, {

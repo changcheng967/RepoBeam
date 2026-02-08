@@ -17,7 +17,7 @@ function shouldIndex(path: string): boolean {
 }
 
 // Sync a repository
-export async function syncRepo(owner: string, name: string): Promise<void> {
+export async function syncRepo(owner: string, name: string, force = false): Promise<void> {
   try {
     // Check GitHub token
     if (!process.env.GITHUB_TOKEN) {
@@ -52,15 +52,28 @@ export async function syncRepo(owner: string, name: string): Promise<void> {
       repo = newRepo!;
     }
 
+    // Check if any files exist
+    const { count } = await supabase
+      .from('files')
+      .select('*', { count: 'exact', head: true })
+      .eq('repo_id', repo!.id);
+
+    const hasFiles = (count || 0) > 0;
+
     // Get latest commit
     const latestSha = await getLatestCommit(owner, name);
-    if (repo!.last_sha === latestSha) {
+    if (!force && repo!.last_sha === latestSha && hasFiles) {
+      console.log(`[sync] ${owner}/${name} already up to date (${count} files)`);
       return; // Already up to date
     }
+
+    console.log(`[sync] Starting sync for ${owner}/${name} (force=${force}, hasFiles=${hasFiles})`);
 
     // Get file tree
     const tree = await getTree(owner, name);
     const files = tree.filter(item => item.type === 'file' && shouldIndex(item.path));
+
+    console.log(`[sync] Found ${files.length} source files to index`);
 
     // Index each file
     for (const file of files) {
