@@ -113,12 +113,12 @@ export default function FilePage() {
     }
   };
 
-  const highlightCode = async (code: string, language: string) => {
+  const highlightCode = async (code: string, language: string | undefined) => {
     if (!highlighter) {
       setHighlightedCode(escapeHtml(code));
       return;
     }
-    const lang = (LANGUAGE_MAP[language.toLowerCase()] || "text") as any;
+    const lang = (language && LANGUAGE_MAP[language.toLowerCase()]) || "text";
     try {
       const html = highlighter.codeToHtml(code, {
         lang,
