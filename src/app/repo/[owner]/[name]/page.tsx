@@ -4,9 +4,12 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
-import { ChevronRight, File, Folder, Home, Search, FileCode, Clock, RefreshCw } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { ChevronRight, File, Home, Search, RefreshCw, GitBranch, Clock, FileCode } from "lucide-react";
 import { internalFetch } from "@/lib/api";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 
 interface FileNode {
   path: string;
@@ -15,19 +18,15 @@ interface FileNode {
   lineCount: number;
 }
 
-const LANGUAGE_COLORS: Record<string, string> = {
-  "C++": "bg-blue-500",
-  "Python": "bg-yellow-500",
-  "JavaScript": "bg-yellow-400",
-  "TypeScript": "bg-blue-600",
-  "Rust": "bg-orange-600",
-  "Go": "bg-cyan-500",
-  "Java": "bg-red-500",
-  "C": "bg-blue-400",
-  "HTML": "bg-orange-500",
-  "CSS": "bg-purple-500",
-  "Shell": "bg-green-500",
-  "default": "bg-gray-500"
+const getIconForPath = (path: string) => {
+  const ext = path.split(".").pop()?.toLowerCase();
+  const icons: Record<string, string> = {
+    cpp: "C++", cc: "C++", h: "C++", hpp: "C++",
+    py: "Py", js: "JS", jsx: "JS", ts: "TS", tsx: "TS",
+    rs: "Rs", go: "Go", java: "Jv",
+    css: "CSS", html: "HTML", json: "JSON", md: "MD",
+  };
+  return icons[ext || ""] || "";
 };
 
 export default function RepoPage() {
@@ -41,6 +40,7 @@ export default function RepoPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     fetchFiles();
@@ -53,6 +53,8 @@ export default function RepoPage() {
       if (res.ok) {
         const data = await res.json();
         setFiles(data.data?.files || data.data || []);
+        const repoInfo = data.data?.repo;
+        setSyncing(repoInfo?.syncing || false);
         // Auto-expand root level folders
         const rootFolders = (data.data?.files || data.data || [])
           .map((f: FileNode) => f.path.split("/")[0])
@@ -109,7 +111,6 @@ export default function RepoPage() {
       }
     }
 
-    // Sort: folders first, then files, both alphabetically
     const sortNodes = (nodes: any[]) => {
       return nodes.sort((a, b) => {
         if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
@@ -163,23 +164,17 @@ export default function RepoPage() {
   }, [tree, searchQuery]);
 
   const totalFiles = files.length;
-  const totalTokens = files.reduce((sum, f) => sum + (f.tokenCount || 0), 0);
   const filteredFiles = searchQuery ? countFiles(filteredTree) : totalFiles;
-
-  const formatTokens = (num: number): string => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-    return num.toString();
-  };
 
   function renderNode(node: any, depth: number = 0): React.ReactNode {
     const isExpanded = expandedFolders.has(node.path) || node.autoExpand;
+    const iconLabel = getIconForPath(node.path);
 
     return (
-      <div key={node.path} className="animate-fade-in">
+      <div key={node.path}>
         <div
-          className={`flex items-center gap-2 py-2 px-3 hover:bg-primary/10 rounded-lg cursor-pointer transition-colors group`}
-          style={{ paddingLeft: `${depth * 16 + 12}px` }}
+          className={`flex items-center gap-1.5 py-1 px-2 hover:bg-muted/50 rounded cursor-pointer text-sm group`}
+          style={{ paddingLeft: `${depth * 14 + 8}px` }}
           onClick={() => {
             if (!node.isFile) {
               toggleFolder(node.path);
@@ -189,23 +184,21 @@ export default function RepoPage() {
           }}
         >
           {node.isFile ? (
-            <File className="h-4 w-4 text-blue-500 flex-shrink-0" />
+            <File className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 opacity-50" />
           ) : (
             <ChevronRight
-              className={`h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+              className={`h-3.5 w-3.5 text-muted-foreground flex-shrink-0 transition-transform ${
+                isExpanded ? 'rotate-90' : ''
+              }`}
             />
           )}
-          <span className="text-sm truncate flex-1">{node.name}</span>
-          {node.isFile && (
-            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <span className="text-xs text-muted-foreground font-mono">
-                {formatTokens(node.tokenCount)}t
-              </span>
-            </div>
+          <span className="flex-1 truncate text-muted-foreground">{node.name}</span>
+          {iconLabel && (
+            <span className="text-[10px] text-muted-foreground/70 font-mono">{iconLabel}</span>
           )}
         </div>
         {isExpanded && node.children && node.children.length > 0 && (
-          <div className="animate-slide-up">
+          <div>
             {node.children.map((child: any) => renderNode(child, depth + 1))}
           </div>
         )}
@@ -214,112 +207,90 @@ export default function RepoPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-50 glass border-b">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center gap-4">
+      <header className="border-b border-border/50 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <div className="flex items-center gap-3">
             <Button
               variant="ghost"
               size="icon"
+              className="h-8 w-8"
               onClick={() => router.push("/")}
-              className="flex-shrink-0"
             >
-              <Home className="h-5 w-5" />
+              <Home className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
-              <span className="font-medium truncate">{owner}</span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <span className="font-medium truncate">{name}</span>
+            <Separator orientation="vertical" className="h-4" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-mono">{owner}</span>
+              <span className="text-muted-foreground/50">/</span>
+              <span className="text-sm font-mono">{name}</span>
             </div>
+            <Badge variant="secondary" className="text-xs">C++</Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            {syncing && <RefreshCw className="h-4 w-4 text-warning animate-spin" />}
             <Button
               variant="outline"
               size="sm"
+              className="h-8 text-xs"
               onClick={() => router.push("/search")}
-              className="gap-2 flex-shrink-0"
             >
-              <Search className="h-4 w-4" />
-              <span className="hidden sm:inline">Search</span>
+              <Search className="h-3.5 w-3.5 mr-1.5" />
+              Search
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-6 py-8">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <Card className="bg-gradient-to-br from-card to-card/50">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <FileCode className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{loading ? "..." : totalFiles}</p>
-                  <p className="text-xs text-muted-foreground">Files</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-card to-card/50">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                  <Clock className="h-5 w-5 text-purple-500" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{loading ? "..." : formatTokens(totalTokens)}</p>
-                  <p className="text-xs text-muted-foreground">Tokens</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Search */}
-        <div className="mb-6">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Search files..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 h-12 text-base"
-            />
-            {searchQuery && (
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                {filteredFiles} results
-              </div>
-            )}
+      {/* Content */}
+      <div className="flex-1 flex">
+        {/* Sidebar - File Tree */}
+        <aside className="w-64 border-r border-border/50 flex-shrink-0 flex flex-col">
+          {/* Search */}
+          <div className="p-3 border-b border-border/50">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Filter files..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 h-8 text-sm bg-muted/30 border-border/50"
+              />
+            </div>
+            <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+              <span>{filteredFiles} files</span>
+            </div>
           </div>
-        </div>
 
-        {/* File Tree */}
-        <Card className="overflow-hidden">
-          {loading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="flex items-center gap-3 text-muted-foreground">
-                <RefreshCw className="h-5 w-5 animate-spin" />
-                <span>Loading files...</span>
-              </div>
+          {/* Tree */}
+          <ScrollArea className="flex-1">
+            <div className="py-1">
+              {loading ? (
+                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  Loading...
+                </div>
+              ) : filteredTree.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center px-4">
+                  <FileCode className="h-8 w-8 text-muted-foreground/50 mb-2" />
+                  <p className="text-sm text-muted-foreground">No files found</p>
+                </div>
+              ) : (
+                filteredTree.map((node: any) => renderNode(node))
+              )}
             </div>
-          ) : filteredTree.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <FileCode className="h-12 w-12 text-muted-foreground/50 mb-4" />
-              <p className="text-muted-foreground">No files found</p>
-              <p className="text-sm text-muted-foreground/70 mt-1">
-                {searchQuery ? "Try a different search term" : "Repository appears to be empty"}
-              </p>
-            </div>
-          ) : (
-            <div className="p-4 max-h-[600px] overflow-y-auto scrollbar-thin">
-              <div className="space-y-0.5">
-                {filteredTree.map((node: any) => renderNode(node))}
-              </div>
-            </div>
-          )}
-        </Card>
-      </main>
+          </ScrollArea>
+        </aside>
+
+        {/* Main Area - Empty State */}
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center text-muted-foreground">
+            <FileCode className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <p className="text-sm">Select a file to view</p>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
