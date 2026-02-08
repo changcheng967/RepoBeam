@@ -40,7 +40,7 @@ export default function RepoPage() {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(["src", "lib", "app", "components"]));
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchFiles();
@@ -53,6 +53,11 @@ export default function RepoPage() {
       if (res.ok) {
         const data = await res.json();
         setFiles(data.data?.files || data.data || []);
+        // Auto-expand root level folders
+        const rootFolders = (data.data?.files || data.data || [])
+          .map((f: FileNode) => f.path.split("/")[0])
+          .filter((p: string, i: number, arr: string[]) => arr.indexOf(p) === i && p.includes("/"));
+        setExpandedFolders(new Set(rootFolders));
       }
     } catch (error) {
       console.error("Failed to fetch files:", error);
