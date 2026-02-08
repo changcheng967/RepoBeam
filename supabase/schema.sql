@@ -37,7 +37,6 @@ CREATE TABLE IF NOT EXISTS files (
 -- Create index for file searches
 CREATE INDEX IF NOT EXISTS files_repo_id_idx ON files(repo_id);
 CREATE INDEX IF NOT EXISTS files_path_idx ON files USING gin(path gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS files_content_idx ON files USING to_tsvector('english', content);
 
 -- Symbols table
 CREATE TABLE IF NOT EXISTS symbols (
@@ -57,7 +56,6 @@ CREATE TABLE IF NOT EXISTS symbols (
 CREATE INDEX IF NOT EXISTS symbols_file_id_idx ON symbols(file_id);
 CREATE INDEX IF NOT EXISTS symbols_name_idx ON symbols USING gin(name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS symbols_kind_idx ON symbols(kind);
-CREATE INDEX IF NOT EXISTS symbols_repo_idx ON symbols(files.repo_id);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

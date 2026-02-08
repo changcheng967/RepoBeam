@@ -41,15 +41,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Repository not found' }, { status: 404 });
   }
 
-  // Full-text search using tsvector
+  // Search using ILIKE (case-insensitive pattern matching)
   let searchQuery = supabase
     .from('files')
     .select('id, path, content')
     .eq('repo_id', repoData.id)
-    .textSearch('content', query.replace(/["']/g, ''), {
-      type: 'plain',
-      config: 'english',
-    });
+    .ilike('content', `%${query}%`);
 
   if (filePattern) {
     searchQuery = searchQuery.like('path', `%${filePattern}%`);
@@ -57,36 +54,7 @@ export async function GET(request: NextRequest) {
 
   searchQuery = searchQuery.limit(maxResults);
 
-  const { data: files, error } = await searchQuery;
-
-  if (error) {
-    // Fallback to ILIKE if tsvector search fails
-    const { data: fallbackFiles } = await supabase
-      .from('files')
-      .select('id, path, content')
-      .eq('repo_id', repoData.id)
-      .ilike('content', `%${query}%`)
-      .limit(maxResults);
-
-    const results: SearchResult[] = (fallbackFiles || []).map(file => {
-      const lines = file.content.split('\n');
-      const matchLine = lines.findIndex((l: string) => l.toLowerCase().includes(query.toLowerCase()));
-      const line = matchLine >= 0 ? matchLine + 1 : 1;
-
-      // Get snippet (5 lines context)
-      const snippetStart = Math.max(0, line - 6);
-      const snippetEnd = Math.min(lines.length, line + 4);
-      const snippet = lines.slice(snippetStart, snippetEnd).join('\n');
-
-      return {
-        path: file.path,
-        line,
-        snippet: snippet.substring(0, 500),
-      };
-    });
-
-    return NextResponse.json(createResponse(results, Math.ceil(JSON.stringify(results).length / 4)));
-  }
+  const { data: files } = await searchQuery;
 
   const results: SearchResult[] = (files || []).map(file => {
     const lines = file.content.split('\n');
