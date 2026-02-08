@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronRight, File, Folder, GitBranch, Home, Search, Copy } from "lucide-react";
+import { ChevronRight, File, Folder, Home, Search } from "lucide-react";
+import { internalFetch } from "@/lib/api";
 
 interface FileNode {
   path: string;
@@ -23,7 +24,6 @@ export default function RepoPage() {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     fetchFiles();
@@ -32,11 +32,7 @@ export default function RepoPage() {
   const fetchFiles = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/tree?repo=${encodeURIComponent(repoName)}`, {
-        headers: {
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}`,
-        },
-      });
+      const res = await internalFetch(`/api/tree?repo=${encodeURIComponent(repoName)}`);
       if (res.ok) {
         const data = await res.json();
         setFiles(data.data);
@@ -45,25 +41,6 @@ export default function RepoPage() {
       console.error("Failed to fetch files:", error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const syncRepo = async () => {
-    setSyncing(true);
-    try {
-      await fetch(`/api/repos/sync-by-name`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}`,
-        },
-        body: JSON.stringify({ owner, name }),
-      });
-      fetchFiles();
-    } catch (error) {
-      console.error("Failed to sync:", error);
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -167,16 +144,10 @@ export default function RepoPage() {
               <span className="font-medium">{name}</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => router.push("/search")}>
-              <Search className="h-4 w-4 mr-2" />
-              Search
-            </Button>
-            <Button variant="outline" size="sm" onClick={syncRepo} disabled={syncing}>
-              <GitBranch className="h-4 w-4 mr-2" />
-              {syncing ? "Syncing..." : "Sync"}
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" onClick={() => router.push("/search")}>
+            <Search className="h-4 w-4 mr-2" />
+            Search
+          </Button>
         </div>
       </header>
 

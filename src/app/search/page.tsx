@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Search, FileText, FileCode } from "lucide-react";
+import { ArrowLeft, Search, FileText, FileCode, Home } from "lucide-react";
+import { internalFetch } from "@/lib/api";
 
 interface SearchResult {
   path: string;
@@ -22,6 +23,8 @@ interface SymbolResult {
   tokenCount: number;
 }
 
+const LUMINEX_REPO = "changcheng967/Luminex";
+
 export default function SearchPage() {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -29,7 +32,6 @@ export default function SearchPage() {
   const [symbols, setSymbols] = useState<SymbolResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"code" | "symbols">("code");
-  const [selectedRepo, setSelectedRepo] = useState("");
 
   const search = async () => {
     if (!query.trim()) return;
@@ -37,22 +39,16 @@ export default function SearchPage() {
     setLoading(true);
     try {
       if (activeTab === "code") {
-        const res = await fetch(
-          `/api/search?repo=${selectedRepo}&q=${encodeURIComponent(query)}`,
-          {
-            headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}` },
-          }
+        const res = await internalFetch(
+          `/api/search?repo=${LUMINEX_REPO}&q=${encodeURIComponent(query)}`
         );
         if (res.ok) {
           const data = await res.json();
           setResults(data.data);
         }
       } else {
-        const res = await fetch(
-          `/api/symbols/search?repo=${selectedRepo}&q=${encodeURIComponent(query)}`,
-          {
-            headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}` },
-          }
+        const res = await internalFetch(
+          `/api/symbols/search?repo=${LUMINEX_REPO}&q=${encodeURIComponent(query)}`
         );
         if (res.ok) {
           const data = await res.json();
@@ -83,9 +79,9 @@ export default function SearchPage() {
       <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
-            <ArrowLeft className="h-4 w-4" />
+            <Home className="h-4 w-4" />
           </Button>
-          <h1 className="text-xl font-bold">Search</h1>
+          <h1 className="text-xl font-bold">Search Luminex</h1>
         </div>
       </header>
 
@@ -138,7 +134,10 @@ export default function SearchPage() {
                 ) : null
               ) : (
                 results.map((result, i) => (
-                  <Card key={i}>
+                  <Card key={i} className="hover:bg-muted/50 cursor-pointer" onClick={() => {
+                    const [owner, name] = LUMINEX_REPO.split("/");
+                    router.push(`/repo/${owner}/${name}/${result.path}`);
+                  }}>
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium text-sm">{result.path}</span>
@@ -159,7 +158,10 @@ export default function SearchPage() {
               ) : null
             ) : (
               symbols.map((symbol, i) => (
-                <Card key={i} className="hover:bg-muted/50 cursor-pointer">
+                <Card key={i} className="hover:bg-muted/50 cursor-pointer" onClick={() => {
+                  const [owner, name] = LUMINEX_REPO.split("/");
+                  router.push(`/repo/${owner}/${name}/${symbol.path}`);
+                }}>
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
                       <FileCode className={`h-4 w-4 ${getKindColor(symbol.kind)}`} />

@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, ChevronRight, Home, FileCode, Copy, Search } from "lucide-react";
+import { ChevronLeft, Home, FileCode, Copy, Search } from "lucide-react";
+import { internalFetch } from "@/lib/api";
 
 interface FileData {
   content: string;
@@ -45,12 +46,8 @@ export default function FilePage() {
     setLoading(true);
     try {
       const [fileRes, symbolsRes] = await Promise.all([
-        fetch(`/api/file?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}`, {
-          headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}` },
-        }),
-        fetch(`/api/symbols?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}`, {
-          headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}` },
-        }),
+        internalFetch(`/api/file?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}`),
+        internalFetch(`/api/symbols?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}`),
       ]);
 
       if (fileRes.ok) {
@@ -71,11 +68,8 @@ export default function FilePage() {
 
   const selectSymbol = async (symbol: Symbol) => {
     try {
-      const res = await fetch(
-        `/api/function?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}&name=${symbol.name}`,
-        {
-          headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}` },
-        }
+      const res = await internalFetch(
+        `/api/function?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}&name=${symbol.name}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -122,9 +116,9 @@ export default function FilePage() {
             </Button>
             <div className="flex items-center gap-2 text-sm">
               <span className="font-medium">{owner}</span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">/</span>
               <span className="font-medium">{name}</span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">/</span>
               <span className="text-muted-foreground truncate max-w-md">{path}</span>
             </div>
           </div>

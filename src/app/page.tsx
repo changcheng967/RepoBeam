@@ -1,252 +1,109 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Plus, Search, GitBranch, FileCode, Database } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Search, FileCode, GitBranch, Code } from "lucide-react";
+import { useEffect, useState } from "react";
+import { internalFetch } from "@/lib/api";
 
-interface Repo {
-  id: number;
-  full_name: string;
-  description: string | null;
-  language: string | null;
-  last_synced_at: string | null;
+interface RepoStats {
   file_count: number;
   symbol_count: number;
+  language: string | null;
+  description: string | null;
 }
+
+const LUMINEX_REPO = {
+  owner: "changcheng967",
+  name: "Luminex",
+  full_name: "changcheng967/Luminex"
+};
 
 export default function HomePage() {
   const router = useRouter();
-  const [repos, setRepos] = useState<Repo[]>([]);
+  const [stats, setStats] = useState<RepoStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [addRepoOpen, setAddRepoOpen] = useState(false);
-  const [newOwner, setNewOwner] = useState("");
-  const [newName, setNewName] = useState("");
-  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
-    fetchRepos();
+    fetchStats();
   }, []);
 
-  const fetchRepos = async () => {
+  const fetchStats = async () => {
     try {
-      const res = await fetch("/api/repos", {
-        headers: {
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}`,
-        },
-      });
+      const res = await internalFetch(`/api/tree?repo=${LUMINEX_REPO.full_name}`);
       if (res.ok) {
         const data = await res.json();
-        setRepos(data.data);
+        setStats({
+          file_count: data.data?.length || 0,
+          symbol_count: 0,
+          language: "C++",
+          description: "High-performance ML inference framework"
+        });
       }
     } catch (error) {
-      console.error("Failed to fetch repos:", error);
+      console.error("Failed to fetch stats:", error);
     } finally {
       setLoading(false);
     }
   };
-
-  const addRepo = async () => {
-    if (!newOwner || !newName) return;
-
-    setAdding(true);
-    try {
-      const res = await fetch("/api/repos", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}`,
-        },
-        body: JSON.stringify({ owner: newOwner, name: newName }),
-      });
-
-      if (res.ok) {
-        setAddRepoOpen(false);
-        setNewOwner("");
-        setNewName("");
-        fetchRepos();
-      }
-    } catch (error) {
-      console.error("Failed to add repo:", error);
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const deleteRepo = async (id: number) => {
-    try {
-      await fetch(`/api/repos/${id}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}`,
-        },
-      });
-      fetchRepos();
-    } catch (error) {
-      console.error("Failed to delete repo:", error);
-    }
-  };
-
-  const syncRepo = async (id: number) => {
-    try {
-      await fetch(`/api/repos/${id}/sync`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_KEY || ""}`,
-        },
-      });
-      fetchRepos();
-    } catch (error) {
-      console.error("Failed to sync repo:", error);
-    }
-  };
-
-  const filteredRepos = repos.filter(
-    (repo) =>
-      repo.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      repo.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Database className="h-6 w-6" />
+            <Code className="h-6 w-6" />
             <h1 className="text-2xl font-bold">RepoBeam</h1>
           </div>
-          <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              onClick={() => router.push("/search")}
-            >
-              <Search className="h-4 w-4 mr-2" />
-              Search
-            </Button>
-            <Dialog open={addRepoOpen} onOpenChange={setAddRepoOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Repo
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Repository</DialogTitle>
-                  <DialogDescription>
-                    Enter the GitHub repository to index
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div>
-                    <label className="text-sm font-medium">Owner</label>
-                    <Input
-                      placeholder="e.g. facebook"
-                      value={newOwner}
-                      onChange={(e) => setNewOwner(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Repository Name</label>
-                    <Input
-                      placeholder="e.g. react"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={addRepo} disabled={adding || !newOwner || !newName}>
-                    {adding ? "Adding..." : "Add Repository"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
+          <Button
+            variant="outline"
+            onClick={() => router.push("/search")}
+          >
+            <Search className="h-4 w-4 mr-2" />
+            Search
+          </Button>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <Input
-            placeholder="Search repositories..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="max-w-md"
-          />
+      <main className="container mx-auto px-4 py-16">
+        <div className="max-w-2xl mx-auto text-center mb-12">
+          <h2 className="text-4xl font-bold mb-4">Luminex</h2>
+          <p className="text-muted-foreground text-lg">
+            High-performance ML inference framework
+          </p>
         </div>
 
-        {loading ? (
-          <div className="text-center py-12 text-muted-foreground">Loading...</div>
-        ) : filteredRepos.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            No repositories found. Add one to get started.
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredRepos.map((repo) => (
-              <Card key={repo.id} className="hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <CardTitle className="text-lg">{repo.full_name}</CardTitle>
-                  {repo.description && (
-                    <CardDescription className="line-clamp-2">
-                      {repo.description}
-                    </CardDescription>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
-                    {repo.language && (
-                      <span className="flex items-center gap-1">
-                        <FileCode className="h-3 w-3" />
-                        {repo.language}
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1">
-                      <FileCode className="h-3 w-3" />
-                      {repo.file_count} files
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <GitBranch className="h-3 w-3" />
-                      {repo.symbol_count} symbols
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => {
-                        const [owner, name] = repo.full_name.split("/");
-                        router.push(`/repo/${owner}/${name}`);
-                      }}
-                    >
-                      Browse
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => syncRepo(repo.id)}
-                    >
-                      <GitBranch className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteRepo(repo.id)}
-                    >
-                      ×
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+        <div className="flex justify-center">
+          <Card className="w-full max-w-md hover:shadow-lg transition-shadow cursor-pointer"
+                onClick={() => router.push(`/repo/${LUMINEX_REPO.owner}/${LUMINEX_REPO.name}`)}>
+            <CardHeader>
+              <CardTitle className="text-xl">{LUMINEX_REPO.full_name}</CardTitle>
+              {stats?.description && (
+                <CardDescription>{stats.description}</CardDescription>
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-6 text-sm text-muted-foreground mb-6">
+                <span className="flex items-center gap-1">
+                  <FileCode className="h-4 w-4" />
+                  {loading ? "..." : `${stats?.file_count || 0} files`}
+                </span>
+                <span className="flex items-center gap-1">
+                  <GitBranch className="h-4 w-4" />
+                  {stats?.language || "C++"}
+                </span>
+              </div>
+              <Button className="w-full">
+                Browse Code
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="mt-16 text-center text-sm text-muted-foreground">
+          <p>API: <code className="bg-muted px-2 py-1 rounded">GET /api/help</code> for documentation</p>
+        </div>
       </main>
     </div>
   );

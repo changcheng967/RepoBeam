@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const API_KEY = process.env.API_KEY;
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'internal-web-ui';
 
 export function auth(request: NextRequest): boolean {
+  // Allow internal web UI requests
+  const internalHeader = request.headers.get('x-internal-request');
+  if (internalHeader === INTERNAL_SECRET) return true;
+
+  // Check API key for external requests
   const authHeader = request.headers.get('authorization');
   if (!authHeader) return false;
 
@@ -40,3 +46,14 @@ export function parseRepoParam(repo: string | null): { owner: string; name: stri
 
 // Default max tokens
 export const DEFAULT_MAX_TOKENS = 8000;
+
+// Fetch wrapper for internal API calls
+export async function internalFetch(url: string, options?: RequestInit) {
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...options?.headers,
+      'x-internal-request': INTERNAL_SECRET,
+    },
+  });
+}
