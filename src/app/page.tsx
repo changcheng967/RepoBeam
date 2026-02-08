@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, FileCode, GitBranch, Code } from "lucide-react";
+import { Search, FileCode, GitBranch, Code, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { internalFetch } from "@/lib/api";
 
@@ -24,22 +24,33 @@ export default function HomePage() {
   const router = useRouter();
   const [stats, setStats] = useState<RepoStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     fetchStats();
-  }, []);
+    // Poll every 3 seconds if syncing
+    const interval = setInterval(() => {
+      if (syncing) fetchStats();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [syncing]);
 
   const fetchStats = async () => {
     try {
       const res = await internalFetch(`/api/tree?repo=${LUMINEX_REPO.full_name}`);
       if (res.ok) {
-        const data = await res.json();
+        const json = await res.json();
+        const repoInfo = json.data?.repo;
+        const files = json.data?.files || [];
+        const isSyncing = repoInfo?.syncing || false;
+        setSyncing(isSyncing);
         setStats({
-          file_count: data.data?.length || 0,
+          file_count: repoInfo?.fileCount || files.length || 0,
           symbol_count: 0,
           language: "C++",
-          description: "High-performance ML inference framework"
-        });
+          description: "High-performance ML inference framework",
+          syncing: isSyncing,
+        } as RepoStats & { syncing?: boolean });
       }
     } catch (error) {
       console.error("Failed to fetch stats:", error);
@@ -78,7 +89,12 @@ export default function HomePage() {
           <Card className="w-full max-w-md hover:shadow-lg transition-shadow cursor-pointer"
                 onClick={() => router.push(`/repo/${LUMINEX_REPO.owner}/${LUMINEX_REPO.name}`)}>
             <CardHeader>
-              <CardTitle className="text-xl">{LUMINEX_REPO.full_name}</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl">{LUMINEX_REPO.full_name}</CardTitle>
+                {syncing && (
+                  <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                )}
+              </div>
               {stats?.description && (
                 <CardDescription>{stats.description}</CardDescription>
               )}

@@ -34,10 +34,10 @@ async function ensureLuminexIndexed() {
     return newRepo;
   }
 
-  // Also trigger sync if it's been a while
+  // Also trigger sync if it's been a while (5 minutes)
   const lastSync = existing.last_synced_at ? new Date(existing.last_synced_at) : null;
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  if (!lastSync || lastSync < oneHourAgo) {
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  if (!lastSync || lastSync < fiveMinutesAgo) {
     syncRepo('changcheng967', 'Luminex').catch(console.error);
   }
 
@@ -86,5 +86,21 @@ export async function GET(request: NextRequest) {
     lineCount: f.line_count,
   })) || [];
 
-  return NextResponse.json(createResponse(tree, Math.ceil(JSON.stringify(tree).length / 4)));
+  // Trigger sync if no files yet
+  if (tree.length === 0) {
+    syncRepo(repo.owner, repo.name).catch(console.error);
+  }
+
+  return NextResponse.json(createResponse(
+    {
+      files: tree,
+      repo: {
+        name: repoData.full_name,
+        lastSyncedAt: repoData.last_synced_at,
+        fileCount: tree.length,
+        syncing: tree.length === 0, // Likely syncing if empty
+      }
+    },
+    Math.ceil(JSON.stringify(tree).length / 4)
+  ));
 }

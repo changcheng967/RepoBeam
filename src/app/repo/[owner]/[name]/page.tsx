@@ -35,7 +35,7 @@ export default function RepoPage() {
       const res = await internalFetch(`/api/tree?repo=${encodeURIComponent(repoName)}`);
       if (res.ok) {
         const data = await res.json();
-        setFiles(data.data);
+        setFiles(data.data?.files || data.data || []);
       }
     } catch (error) {
       console.error("Failed to fetch files:", error);
