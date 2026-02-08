@@ -14,9 +14,8 @@ interface ExtractResponse {
 const NIM_API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const NIM_API_KEY = process.env.NIM_API_KEY || '';
 
-// Model for symbol extraction - see model.txt for options
-// Using devstral for best code understanding and reasoning
-const NIM_MODEL = 'mistralai/devstral-2-123b-instruct-2512';
+// Model for symbol extraction - must use models available with your API key
+const NIM_MODEL = 'qwen/qwen2.5-coder-32b-instruct';
 
 const SYMBOL_PROMPT = `Extract all functions, classes, structs, interfaces, types, and enums from the code below.
 
@@ -57,6 +56,7 @@ export async function extractSymbolsWithLLM(
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${NIM_API_KEY}`,
+        'Accept': 'application/json',
       },
       body: JSON.stringify({
         model: NIM_MODEL,
@@ -66,9 +66,12 @@ export async function extractSymbolsWithLLM(
             content: prompt,
           },
         ],
-        temperature: 0.1,
         max_tokens: 16000,
-        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        top_p: 1.0,
+        frequency_penalty: 0.0,
+        presence_penalty: 0.0,
+        stream: false,
       }),
     });
 

@@ -80,7 +80,7 @@ export async function syncRepo(owner: string, name: string, force = false): Prom
     // Index each file (pass SHA from tree for change detection)
     for (const file of files) {
       try {
-        await indexFile(repo!.id, owner, name, file.path, file.sha);
+        await indexFile(repo!.id, owner, name, file.path, file.sha, force);
       } catch (error) {
         console.error(`Failed to index ${file.path}:`, error);
       }
@@ -101,7 +101,7 @@ export async function syncRepo(owner: string, name: string, force = false): Prom
 }
 
 // Index a single file
-async function indexFile(repoId: number, owner: string, name: string, path: string, sha: string): Promise<void> {
+async function indexFile(repoId: number, owner: string, name: string, path: string, sha: string, force = false): Promise<void> {
   const { content } = await getFileContent(owner, name, path);
   const language = detectLanguage(path);
   const tokenCount = estimateTokens(content);
@@ -115,7 +115,7 @@ async function indexFile(repoId: number, owner: string, name: string, path: stri
     .eq('path', path)
     .single();
 
-  if (existingFile && existingFile.last_sha === sha) {
+  if (existingFile && existingFile.last_sha === sha && !force) {
     return; // File unchanged
   }
 
@@ -137,15 +137,24 @@ async function indexFile(repoId: number, owner: string, name: string, path: stri
   if (!file) return;
 
   // Delete old symbols
+  const { data: oldSymbols } = await supabase
+    .from('symbols')
+    .select('*')
+    .eq('file_id', file.id);
+  console.log(`[symbols] Deleting ${oldSymbols?.length || 0} old symbols from ${path}`);
+
   await supabase
     .from('symbols')
     .delete()
     .eq('file_id', file.id);
 
   // Extract and insert symbols using LLM
-  console.log(`[symbols] Extracting from ${path} using LLM...`);
+  console.log(`[symbols] Extracting from ${path} using LLM (language: ${language})...`);
   const symbols = await extractSymbolsWithLLM(content, language);
   console.log(`[symbols] Found ${symbols.length} symbols in ${path}`);
+  if (symbols.length > 0) {
+    console.log(`[symbols] Sample symbols:`, symbols.slice(0, 3).map(s => s.name));
+  }
 
   if (symbols.length > 0) {
     const symbolsToInsert = symbols.map(s => ({
@@ -161,9 +170,17 @@ async function indexFile(repoId: number, owner: string, name: string, path: stri
       parent_symbol: null,
     }));
 
-    await supabase
+    const { error: insertError } = await supabase
       .from('symbols')
       .insert(symbolsToInsert);
+
+    if (insertError) {
+      console.error(`[symbols] Failed to insert symbols:`, insertError);
+    } else {
+      console.log(`[symbols] Inserted ${symbolsToInsert.length} symbols into database`);
+    }
+  } else {
+    console.warn(`[symbols] No symbols extracted for ${path} - check NIM_API_KEY`);
   }
 }
 
@@ -177,7 +194,7 @@ export async function syncFiles(repoId: number, owner: string, name: string, pat
     if (!shouldIndex(path)) continue;
     const sha = treeMap.get(path) || '';
     try {
-      await indexFile(repoId, owner, name, path, sha);
+      await indexFile(repoId, owner, name, path, sha, false);
     } catch (error) {
       console.error(`Failed to sync ${path}:`, error);
     }

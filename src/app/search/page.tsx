@@ -4,16 +4,22 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
-  Home, Search, FileCode, Code, FileText, X, ChevronRight
+  Home, Search, FileCode, Code, FileText, X, ChevronRight,
+  Loader2, ChevronDown, Check
 } from "lucide-react";
 import { internalFetch } from "@/lib/api";
 
-const LUMINEX_REPO = "changcheng967/Luminex";
+interface Repo {
+  id: number;
+  full_name: string;
+  owner: string;
+  name: string;
+}
 
 interface SearchResult {
   path: string;
@@ -36,36 +42,50 @@ function SearchContent() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
 
+  const [repos, setRepos] = useState<Repo[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [symbolResults, setSymbolResults] = useState<SymbolResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [activeTab, setActiveTab] = useState<"code" | "symbols">("code");
+  const [showRepoDropdown, setShowRepoDropdown] = useState(false);
 
   useEffect(() => {
-    if (initialQuery) {
+    fetchRepos();
+  }, []);
+
+  const fetchRepos = async () => {
+    try {
+      const res = await internalFetch("/api/repos");
+      if (res.ok) {
+        const data = await res.json();
+        const repoList = data.data || [];
+        setRepos(repoList);
+        if (repoList.length > 0) {
+          setSelectedRepo(repoList[0].full_name);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch repos:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (initialQuery && selectedRepo) {
       performSearch(initialQuery);
     }
-  }, [initialQuery]);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (searchQuery.trim()) {
-        performSearch(searchQuery);
-      } else {
-        setResults([]);
-        setSymbolResults([]);
-      }
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [searchQuery]);
+  }, [initialQuery, selectedRepo]);
 
   const performSearch = async (query: string) => {
-    setLoading(true);
+    if (!selectedRepo) return;
+
+    setSearching(true);
     try {
       const [codeRes, symbolsRes] = await Promise.all([
-        internalFetch(`/api/search?repo=${LUMINEX_REPO}&q=${encodeURIComponent(query)}`),
-        internalFetch(`/api/symbols/search?repo=${LUMINEX_REPO}&q=${encodeURIComponent(query)}`),
+        internalFetch(`/api/search?repo=${encodeURIComponent(selectedRepo)}&q=${encodeURIComponent(query)}`),
+        internalFetch(`/api/symbols/search?repo=${encodeURIComponent(selectedRepo)}&q=${encodeURIComponent(query)}`),
       ]);
 
       if (codeRes.ok) {
@@ -80,16 +100,25 @@ function SearchContent() {
     } catch (error) {
       console.error("Search failed:", error);
     } finally {
-      setLoading(false);
+      setSearching(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      performSearch(searchQuery);
     }
   };
 
   const handleResultClick = (result: SearchResult) => {
-    router.push(`/repo/changcheng967/Luminex/${result.path}`);
+    const [owner, name, ...pathParts] = selectedRepo.split("/");
+    router.push(`/repo/${owner}/${name}/${result.path}`);
   };
 
   const handleSymbolClick = (result: SymbolResult) => {
-    router.push(`/repo/changcheng967/Luminex/${result.path}`);
+    const [owner, name, ...pathParts] = selectedRepo.split("/");
+    router.push(`/repo/${owner}/${name}/${result.path}`);
   };
 
   const getKindColor = (kind: string) => {
@@ -135,8 +164,46 @@ function SearchContent() {
             <Home className="h-4 w-4" />
           </Button>
           <Separator orientation="vertical" className="h-4" />
-          <div className="flex-1 max-w-2xl">
+          <div className="flex-1 flex items-center gap-3">
+            {/* Repo Selector */}
             <div className="relative">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 px-3 justify-between min-w-[200px]"
+                onClick={() => setShowRepoDropdown(!showRepoDropdown)}
+                disabled={repos.length === 0}
+              >
+                <span className="truncate">
+                  {repos.length === 0 ? "No repos" : selectedRepo || "Select repo..."}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 ml-2 flex-shrink-0" />
+              </Button>
+
+              {showRepoDropdown && repos.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 w-full bg-popover border border-border rounded-md shadow-lg z-50 max-h-[300px] overflow-y-auto">
+                  {repos.map((repo) => (
+                    <button
+                      key={repo.id}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50 flex items-center gap-2"
+                      onClick={() => {
+                        setSelectedRepo(repo.full_name);
+                        setShowRepoDropdown(false);
+                        if (searchQuery) performSearch(searchQuery);
+                      }}
+                    >
+                      {selectedRepo === repo.full_name && (
+                        <Check className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                      )}
+                      <span className="font-mono truncate">{repo.full_name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Search Input */}
+            <form onSubmit={handleSubmit} className="flex-1 max-w-xl relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search code, symbols, functions..."
@@ -147,6 +214,7 @@ function SearchContent() {
               />
               {searchQuery && (
                 <button
+                  type="button"
                   onClick={() => {
                     setSearchQuery("");
                     setResults([]);
@@ -157,7 +225,7 @@ function SearchContent() {
                   <X className="h-4 w-4" />
                 </button>
               )}
-            </div>
+            </form>
           </div>
         </div>
       </header>
@@ -197,12 +265,15 @@ function SearchContent() {
         {!hasSearched ? (
           <div className="flex flex-col items-center justify-center py-32 text-center">
             <Search className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <p className="text-muted-foreground">Search code and symbols</p>
+            <h2 className="text-lg font-medium mb-2">Search Code</h2>
+            <p className="text-sm text-muted-foreground">
+              {repos.length === 0 ? "Add a repository to start searching" : "Search code and symbols across your repositories"}
+            </p>
           </div>
-        ) : loading && !hasResults ? (
+        ) : searching && !hasResults ? (
           <div className="flex items-center justify-center py-20">
             <div className="flex items-center gap-3 text-muted-foreground">
-              <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
               <span className="text-sm">Searching...</span>
             </div>
           </div>
@@ -212,7 +283,7 @@ function SearchContent() {
               {results.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <FileText className="h-10 w-10 text-muted-foreground/50 mb-3" />
-                  <p className="text-sm text-muted-foreground">No code results found</p>
+                  <p className="text-sm text-muted-foreground">No code results found for "{searchQuery}"</p>
                 </div>
               ) : (
                 <div className="space-y-1">
@@ -246,7 +317,7 @@ function SearchContent() {
               {symbolResults.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <Code className="h-10 w-10 text-muted-foreground/50 mb-3" />
-                  <p className="text-sm text-muted-foreground">No symbols found</p>
+                  <p className="text-sm text-muted-foreground">No symbols found for "{searchQuery}"</p>
                 </div>
               ) : (
                 <div className="space-y-1">
