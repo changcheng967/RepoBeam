@@ -37,23 +37,25 @@ export async function getTree(owner: string, name: string, sha?: string) {
   return data.tree;
 }
 
-// Get single file content
-export async function getFileContent(owner: string, name: string, path: string) {
-  const { data } = await octokit.rest.repos.getContent({
-    owner,
-    repo: name,
-    path,
-  });
+// Get single file content using raw.githubusercontent.com
+// Better than contents API: no base64, no JSON overhead, no rate limit
+export async function getFileContent(owner: string, name: string, path: string, branch = 'main') {
+  // Use raw.githubusercontent.com - faster, no base64, no rate limit
+  const rawUrl = `https://raw.githubusercontent.com/${owner}/${name}/${branch}/${path}`;
+  const response = await fetch(rawUrl);
 
-  if (Array.isArray(data) || data.type !== 'file') {
-    throw new Error('Not a file');
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${path}: ${response.statusText}`);
   }
 
-  const content = Buffer.from(data.content, 'base64').toString('utf-8');
+  const content = await response.text();
+
+  // Get SHA from tree (we already have it from the tree fetch)
+  // This avoids an extra API call just for the SHA
   return {
     content,
-    sha: data.sha,
-    size: data.size,
+    sha: '', // SHA is already known from tree endpoint
+    size: content.length,
   };
 }
 

@@ -75,10 +75,10 @@ export async function syncRepo(owner: string, name: string, force = false): Prom
 
     console.log(`[sync] Found ${files.length} source files to index`);
 
-    // Index each file
+    // Index each file (pass SHA from tree for change detection)
     for (const file of files) {
       try {
-        await indexFile(repo!.id, owner, name, file.path);
+        await indexFile(repo!.id, owner, name, file.path, file.sha);
       } catch (error) {
         console.error(`Failed to index ${file.path}:`, error);
       }
@@ -99,8 +99,8 @@ export async function syncRepo(owner: string, name: string, force = false): Prom
 }
 
 // Index a single file
-async function indexFile(repoId: number, owner: string, name: string, path: string): Promise<void> {
-  const { content, sha } = await getFileContent(owner, name, path);
+async function indexFile(repoId: number, owner: string, name: string, path: string, sha: string): Promise<void> {
+  const { content } = await getFileContent(owner, name, path);
   const language = detectLanguage(path);
   const tokenCount = estimateTokens(content);
   const lineCount = countLines(content);
@@ -164,10 +164,15 @@ async function indexFile(repoId: number, owner: string, name: string, path: stri
 
 // Sync specific files (for webhook)
 export async function syncFiles(repoId: number, owner: string, name: string, paths: string[]): Promise<void> {
+  // Get tree for SHA lookup
+  const tree = await getTree(owner, name);
+  const treeMap = new Map(tree.map(item => [item.path, item.sha]));
+
   for (const path of paths) {
     if (!shouldIndex(path)) continue;
+    const sha = treeMap.get(path) || '';
     try {
-      await indexFile(repoId, owner, name, path);
+      await indexFile(repoId, owner, name, path, sha);
     } catch (error) {
       console.error(`Failed to sync ${path}:`, error);
     }
