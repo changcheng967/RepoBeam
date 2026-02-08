@@ -1,6 +1,7 @@
 import { supabase, estimateTokens } from './supabase';
 import { getRepo, getTree, getFileContent, getLatestCommit } from './github';
-import { detectLanguage, extractSymbolsRegex, countLines } from './parser';
+import { detectLanguage, countLines } from './parser';
+import { extractSymbolsWithLLM } from './symbols';
 
 // Supported source code extensions for indexing
 const SOURCE_EXTENSIONS = [
@@ -141,20 +142,23 @@ async function indexFile(repoId: number, owner: string, name: string, path: stri
     .delete()
     .eq('file_id', file.id);
 
-  // Extract and insert symbols
-  const symbols = extractSymbolsRegex(content, language);
+  // Extract and insert symbols using LLM
+  console.log(`[symbols] Extracting from ${path} using LLM...`);
+  const symbols = await extractSymbolsWithLLM(content, language);
+  console.log(`[symbols] Found ${symbols.length} symbols in ${path}`);
+
   if (symbols.length > 0) {
     const symbolsToInsert = symbols.map(s => ({
       file_id: file.id,
       name: s.name,
       kind: s.kind,
-      signature: s.signature,
+      signature: s.signature || null,
       start_line: s.startLine,
       end_line: s.endLine,
       token_count: estimateTokens(
         content.split('\n').slice(s.startLine - 1, s.endLine).join('\n')
       ),
-      parent_symbol: s.parentSymbol,
+      parent_symbol: null,
     }));
 
     await supabase
