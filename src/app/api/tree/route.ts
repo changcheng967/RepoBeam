@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, Repo, File, createResponse } from '@/lib/supabase';
 import { auth, unauthorized, badRequest, parseRepoParam } from '@/lib/api';
-import redis, { CACHE_KEYS, CACHE_TTL } from '@/lib/redis';
 import { syncRepo } from '@/lib/sync';
 
 export const dynamic = 'force-dynamic';
@@ -58,7 +57,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Special handling for Luminex - auto-index if not found
-  if (repo.full_name === 'changcheng967/Luminex') {
+  if (`${repo.owner}/${repo.name}` === 'changcheng967/Luminex') {
     await ensureLuminexIndexed();
   }
 
@@ -71,19 +70,6 @@ export async function GET(request: NextRequest) {
 
   if (!repoData) {
     return NextResponse.json({ error: 'Repository not found' }, { status: 404 });
-  }
-
-  // Try cache first (skip if Redis not configured)
-  let cached = null;
-  try {
-    const cacheKey = CACHE_KEYS.repoTree(repoData.id);
-    cached = await redis.get(cacheKey);
-  } catch (e) {
-    // Redis not configured, skip cache
-  }
-
-  if (cached) {
-    return NextResponse.json(createResponse(JSON.parse(cached as string), 100));
   }
 
   // Get files
@@ -99,14 +85,6 @@ export async function GET(request: NextRequest) {
     tokenCount: f.token_count,
     lineCount: f.line_count,
   })) || [];
-
-  // Cache for 15 minutes (skip if Redis not configured)
-  try {
-    const cacheKey = CACHE_KEYS.repoTree(repoData.id);
-    await redis.set(cacheKey, JSON.stringify(tree), { ex: CACHE_TTL });
-  } catch (e) {
-    // Redis not configured, skip cache
-  }
 
   return NextResponse.json(createResponse(tree, Math.ceil(JSON.stringify(tree).length / 4)));
 }

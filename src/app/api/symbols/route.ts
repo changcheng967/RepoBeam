@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase, Repo, File, Symbol, createResponse } from '@/lib/supabase';
 import { auth, unauthorized, badRequest, parseRepoParam } from '@/lib/api';
 import { extractSymbolsRegex } from '@/lib/parser';
-import redis, { CACHE_KEYS, CACHE_TTL } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,13 +31,6 @@ export async function GET(request: NextRequest) {
 
   if (!repoData) {
     return NextResponse.json({ error: 'Repository not found' }, { status: 404 });
-  }
-
-  // Try cache first
-  const cacheKey = CACHE_KEYS.symbolList(repoData.id, path);
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    return NextResponse.json(createResponse(JSON.parse(cached as string), 100));
   }
 
   // Get file
@@ -84,9 +76,6 @@ export async function GET(request: NextRequest) {
     }));
     symbolsList.push(...parsedList);
   }
-
-  // Cache for 15 minutes
-  await redis.set(cacheKey, JSON.stringify(symbolsList), { ex: CACHE_TTL });
 
   return NextResponse.json(createResponse(symbolsList, Math.ceil(JSON.stringify(symbolsList).length / 4)));
 }

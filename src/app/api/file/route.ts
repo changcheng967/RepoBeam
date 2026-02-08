@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase, Repo, File, Symbol, createResponse, estimateTokens } from '@/lib/supabase';
 import { auth, unauthorized, badRequest, parseRepoParam, DEFAULT_MAX_TOKENS } from '@/lib/api';
 import { extractLineRange, extractSymbolsRegex } from '@/lib/parser';
-import redis, { CACHE_KEYS, CACHE_TTL } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 

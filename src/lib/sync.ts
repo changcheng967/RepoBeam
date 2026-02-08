@@ -1,7 +1,6 @@
 import { supabase, estimateTokens } from './supabase';
 import { getRepo, getTree, getFileContent, getLatestCommit } from './github';
 import { detectLanguage, extractSymbolsRegex, countLines } from './parser';
-import redis, { CACHE_KEYS } from './redis';
 
 // Supported source code extensions for indexing
 const SOURCE_EXTENSIONS = [
@@ -80,13 +79,6 @@ export async function syncRepo(owner: string, name: string): Promise<void> {
         last_synced_at: new Date().toISOString(),
       })
       .eq('id', repo!.id);
-
-    // Invalidate cache (skip if Redis not configured)
-    try {
-      await redis.del(CACHE_KEYS.repoTree(repo!.id));
-    } catch (e) {
-      // Redis not configured, skip
-    }
   } catch (error) {
     console.error(`Failed to sync ${owner}/${name}:`, error);
     throw error;
@@ -155,14 +147,6 @@ async function indexFile(repoId: number, owner: string, name: string, path: stri
       .from('symbols')
       .insert(symbolsToInsert);
   }
-
-  // Invalidate cache (skip if Redis not configured)
-  try {
-    await redis.del(CACHE_KEYS.parsedFile(repoId, path));
-    await redis.del(CACHE_KEYS.symbolList(repoId, path));
-  } catch (e) {
-    // Redis not configured, skip
-  }
 }
 
 // Sync specific files (for webhook)
@@ -181,11 +165,4 @@ export async function syncFiles(repoId: number, owner: string, name: string, pat
     .from('repos')
     .update({ last_synced_at: new Date().toISOString() })
     .eq('id', repoId);
-
-  // Invalidate tree cache (skip if Redis not configured)
-  try {
-    await redis.del(CACHE_KEYS.repoTree(repoId));
-  } catch (e) {
-    // Redis not configured, skip
-  }
 }

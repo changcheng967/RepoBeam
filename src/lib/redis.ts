@@ -1,13 +1,16 @@
-import { Redis } from '@upstash/redis';
+// Redis is not used - Supabase is the database
+// This is a no-op mock for compatibility
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
+const NoOpRedis = {
+  get: async () => null,
+  set: async () => 'OK',
+  del: async () => 1,
+  // Add any other methods as needed
+};
 
-export default redis;
+export default NoOpRedis;
 
-// Cache keys
+// Cache keys (kept for reference, not used)
 export const CACHE_KEYS = {
   parsedFile: (repoId: number, path: string) => `parsed:${repoId}:${path}`,
   symbolList: (repoId: number, path: string) => `symbols:${repoId}:${path}`,
