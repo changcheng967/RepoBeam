@@ -39,7 +39,7 @@ export async function extractSymbolsWithLLM(
   language: string
 ): Promise<ExtractedSymbol[]> {
   if (!NIM_API_KEY) {
-    console.warn('NIM_API_KEY not set, falling back to empty symbols');
+    console.warn('[NIM] NIM_API_KEY not set');
     return [];
   }
 
@@ -48,6 +48,8 @@ export async function extractSymbolsWithLLM(
     .replace('{language}', language)
     .replace('{codeLength}', truncatedCode.length.toLocaleString())
     .replace('{code}', truncatedCode);
+
+  console.log('[NIM] Extracting symbols from', language, 'file,', truncatedCode.length, 'chars');
 
   try {
     const response = await fetch(NIM_API_URL, {
@@ -72,7 +74,7 @@ export async function extractSymbolsWithLLM(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('NIM API error:', response.status, response.statusText, errorText);
+      console.error('[NIM] API error:', response.status, response.statusText, errorText);
       return [];
     }
 
@@ -80,12 +82,9 @@ export async function extractSymbolsWithLLM(
     const content = data.choices?.[0]?.message?.content;
 
     console.log('[NIM] Raw response length:', content?.length || 0);
-    if (content && content.length < 500) {
-      console.log('[NIM] Response preview:', content.slice(0, 200));
-    }
 
     if (!content) {
-      console.error('No content from NIM, full response:', JSON.stringify(data));
+      console.error('[NIM] No content in response:', JSON.stringify(data));
       return [];
     }
 
@@ -99,7 +98,7 @@ export async function extractSymbolsWithLLM(
       if (jsonMatch) {
         parsed = JSON.parse(jsonMatch[1]);
       } else {
-        console.error('Failed to parse NIM response');
+        console.error('[NIM] Failed to parse JSON, response:', content.slice(0, 500));
         return [];
       }
     }
@@ -107,14 +106,14 @@ export async function extractSymbolsWithLLM(
     const symbols = (parsed as ExtractResponse).symbols || (parsed as { symbols?: ExtractedSymbol[] }).symbols || [];
     const filtered = symbols.filter(s =>
       s.name &&
-      !['if', 'for', 'while', 'switch', 'case', 'else', 'do', 'return', 'break', 'continue', 'try', 'catch'].includes(s.name)
+      !['if', 'for', 'while', 'switch', 'case', 'else', 'do', 'return', 'break', 'continue', 'try', 'catch', 'default', 'goto'].includes(s.name)
     );
 
     console.log('[NIM] Parsed', symbols.length, 'symbols, filtered to', filtered.length);
 
     return filtered;
   } catch (error) {
-    console.error('Error extracting symbols with LLM:', error);
+    console.error('[NIM] Error:', error);
     return [];
   }
 }

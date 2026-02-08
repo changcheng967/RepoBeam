@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
   ChevronLeft, Home, FileCode, Copy, Search, Check,
-  Code, Braces, Type, Component, Layers, Sparkles, ChevronRight, File, Link2
+  Code, Braces, Type, Component, Layers, Sparkles, ChevronRight, File, Link2, Loader2
 } from "lucide-react";
 import { internalFetch } from "@/lib/api";
 import { createHighlighter } from "shiki";
@@ -82,6 +82,7 @@ export default function FilePage() {
   const [symbols, setSymbols] = useState<Symbol[]>([]);
   const [files, setFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [extracting, setExtracting] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<Symbol | null>(null);
   const [highlightedCode, setHighlightedCode] = useState("");
   const [copied, setCopied] = useState(false);
@@ -149,12 +150,35 @@ export default function FilePage() {
 
       if (symbolsRes.ok) {
         const symbolsData = await symbolsRes.json();
-        setSymbols(symbolsData.data);
+        setSymbols(symbolsData.data || []);
+
+        // If no symbols exist, trigger extraction
+        if (!symbolsData.data || symbolsData.data.length === 0) {
+          extractSymbols();
+        }
       }
     } catch (error) {
       console.error("Failed to fetch data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const extractSymbols = async () => {
+    setExtracting(true);
+    try {
+      const res = await internalFetch(
+        `/api/symbols/extract?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}`,
+        { method: 'POST' }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setSymbols(data.symbols || []);
+      }
+    } catch (error) {
+      console.error("Failed to extract symbols:", error);
+    } finally {
+      setExtracting(false);
     }
   };
 
@@ -379,14 +403,27 @@ export default function FilePage() {
 
         {/* Right sidebar - Symbols */}
         <aside className="w-56 border-l border-border/50 flex-shrink-0 flex flex-col">
-          <div className="px-3 py-2 border-b border-border/50">
+          <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between">
             <span className="text-xs font-medium">Symbols ({symbols.length})</span>
+            {extracting && <Loader2 className="h-3 w-3 text-primary animate-spin" />}
           </div>
           <ScrollArea className="flex-1">
-            {symbols.length === 0 ? (
+            {extracting ? (
               <div className="flex flex-col items-center justify-center py-8 text-center px-4">
-                <FileCode className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                <p className="text-xs text-muted-foreground">No symbols</p>
+                <Loader2 className="h-6 w-6 text-primary animate-spin mb-2" />
+                <p className="text-xs text-muted-foreground">Extracting with AI...</p>
+                <p className="text-[10px] text-muted-foreground/70 mt-1">This may take a moment</p>
+              </div>
+            ) : symbols.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center px-4">
+                <Sparkles className="h-7 w-7 text-muted-foreground/50 mb-2" />
+                <p className="text-xs text-muted-foreground">No symbols found</p>
+                <button
+                  onClick={extractSymbols}
+                  className="mt-2 text-xs text-primary hover:underline"
+                >
+                  Extract with AI
+                </button>
               </div>
             ) : (
               <div className="py-1">
