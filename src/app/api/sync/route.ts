@@ -104,7 +104,8 @@ export async function POST(request: NextRequest) {
   let totalFiles = 0;
   try {
     const tree = await getTree(repo.owner, repo.name);
-    totalFiles = tree.filter(item => item.type === 'file' && item.path.match(/\.(c|cpp|cc|cxx|h|hpp|py|js|jsx|ts|tsx|rs|go|java|kt|cs|php|rb|swift|scala|sh)$/i)).length;
+    // GitHub tree API returns "type": "blob" for files
+    totalFiles = tree.filter(item => item.type === 'blob' && item.path.match(/\.(c|cpp|cc|cxx|h|hpp|py|js|jsx|ts|tsx|rs|go|java|kt|cs|php|rb|swift|scala|sh)$/i)).length;
   } catch (e) {
     console.error('Failed to get tree for progress:', e);
   }

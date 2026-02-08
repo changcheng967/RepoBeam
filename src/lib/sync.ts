@@ -71,7 +71,8 @@ export async function syncRepo(owner: string, name: string, force = false): Prom
 
     // Get file tree
     const tree = await getTree(owner, name);
-    const files = tree.filter(item => item.type === 'file' && shouldIndex(item.path));
+    // GitHub tree API returns "type": "blob" for files, "type": "tree" for directories
+    const files = tree.filter(item => item.type === 'blob' && shouldIndex(item.path));
 
     console.log(`[sync] Found ${files.length} source files to index`);
 
