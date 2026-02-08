@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
   ChevronLeft, Home, FileCode, Copy, Search, Check,
-  Code, Braces, Type, Component, Layers, Sparkles, ChevronRight, File, Link2, Loader2
+  Code, Braces, Type, Component, Layers, Sparkles, ChevronRight, File, Link2, Loader2, ExternalLink
 } from "lucide-react";
 import { internalFetch } from "@/lib/api";
 import { createHighlighter } from "shiki";
@@ -86,6 +86,7 @@ export default function FilePage() {
   const [selectedSymbol, setSelectedSymbol] = useState<Symbol | null>(null);
   const [highlightedCode, setHighlightedCode] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedApi, setCopiedApi] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -226,6 +227,8 @@ export default function FilePage() {
   const copyApiUrl = (symbol: Symbol) => {
     const url = `${window.location.origin}/api/function?repo=${repoName}&path=${path}&name=${symbol.name}`;
     navigator.clipboard.writeText(url);
+    setCopiedApi(symbol.name);
+    setTimeout(() => setCopiedApi(null), 2000);
   };
 
   // Build tree structure
@@ -437,14 +440,32 @@ export default function FilePage() {
                       return (
                         <div
                           key={i}
-                          className={`px-3 py-1.5 hover:bg-muted/50 cursor-pointer text-sm flex items-center gap-2 ${
+                          className={`px-3 py-1.5 hover:bg-muted/50 text-sm flex items-center gap-2 ${
                             selectedSymbol?.name === sym.name ? "bg-muted/70" : ""
                           }`}
-                          onClick={() => selectSymbol(sym)}
                         >
-                          <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${getKindColor(sym.kind)}`} />
-                          <span className="flex-1 truncate text-muted-foreground">{sym.name}</span>
-                          <span className="text-[10px] text-muted-foreground/70">{sym.tokenCount}</span>
+                          <div
+                            className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
+                            onClick={() => selectSymbol(sym)}
+                          >
+                            <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${getKindColor(sym.kind)}`} />
+                            <span className="flex-1 truncate text-muted-foreground">{sym.name}</span>
+                            <span className="text-[10px] text-muted-foreground/70">{sym.tokenCount}t</span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyApiUrl(sym);
+                            }}
+                            className="flex-shrink-0 p-1 hover:bg-muted rounded group/copy"
+                            title="Copy API URL for LLM"
+                          >
+                            {copiedApi === sym.name ? (
+                              <Check className="h-3 w-3 text-success" />
+                            ) : (
+                              <ExternalLink className="h-3 w-3 text-muted-foreground group-hover/copy:text-foreground" />
+                            )}
+                          </button>
                         </div>
                       );
                     })}
