@@ -1,4 +1,4 @@
-import { supabase, estimateTokens, Repo, File, Symbol } from './supabase';
+import { supabase, estimateTokens } from './supabase';
 import { getRepo, getTree, getFileContent, getLatestCommit } from './github';
 import { detectLanguage, extractSymbolsRegex, countLines } from './parser';
 import redis, { CACHE_KEYS } from './redis';
@@ -19,63 +19,78 @@ function shouldIndex(path: string): boolean {
 
 // Sync a repository
 export async function syncRepo(owner: string, name: string): Promise<void> {
-  // Get or create repo
-  const { data: existingRepo } = await supabase
-    .from('repos')
-    .select('*')
-    .eq('full_name', `${owner}/${name}`)
-    .single();
-
-  let repo = existingRepo;
-
-  if (!repo) {
-    const ghRepo = await getRepo(owner, name);
-    const { data: newRepo } = await supabase
-      .from('repos')
-      .insert({
-        owner,
-        name,
-        full_name: `${owner}/${name}`,
-        description: ghRepo.description,
-        language: ghRepo.language,
-        last_sha: null,
-        last_synced_at: null,
-      })
-      .select()
-      .single();
-    repo = newRepo!;
-  }
-
-  // Get latest commit
-  const latestSha = await getLatestCommit(owner, name);
-  if (repo!.last_sha === latestSha) {
-    return; // Already up to date
-  }
-
-  // Get file tree
-  const tree = await getTree(owner, name);
-  const files = tree.filter(item => item.type === 'file' && shouldIndex(item.path));
-
-  // Index each file
-  for (const file of files) {
-    try {
-      await indexFile(repo!.id, owner, name, file.path);
-    } catch (error) {
-      console.error(`Failed to index ${file.path}:`, error);
+  try {
+    // Check GitHub token
+    if (!process.env.GITHUB_TOKEN) {
+      console.error('GITHUB_TOKEN not set, skipping sync');
+      return;
     }
+
+    // Get or create repo
+    const { data: existingRepo } = await supabase
+      .from('repos')
+      .select('*')
+      .eq('full_name', `${owner}/${name}`)
+      .single();
+
+    let repo = existingRepo;
+
+    if (!repo) {
+      const ghRepo = await getRepo(owner, name);
+      const { data: newRepo } = await supabase
+        .from('repos')
+        .insert({
+          owner,
+          name,
+          full_name: `${owner}/${name}`,
+          description: ghRepo.description,
+          language: ghRepo.language,
+          last_sha: null,
+          last_synced_at: null,
+        })
+        .select()
+        .single();
+      repo = newRepo!;
+    }
+
+    // Get latest commit
+    const latestSha = await getLatestCommit(owner, name);
+    if (repo!.last_sha === latestSha) {
+      return; // Already up to date
+    }
+
+    // Get file tree
+    const tree = await getTree(owner, name);
+    const files = tree.filter(item => item.type === 'file' && shouldIndex(item.path));
+
+    // Index each file
+    for (const file of files) {
+      try {
+        await indexFile(repo!.id, owner, name, file.path);
+      } catch (error) {
+        console.error(`Failed to index ${file.path}:`, error);
+      }
+    }
+
+    // Update repo sync state
+    await supabase
+      .from('repos')
+      .update({
+        last_sha: latestSha,
+        last_synced_at: new Date().toISOString(),
+      })
+      .eq('id', repo!.id);
+
+    // Invalidate cache (skip if Redis not configured)
+    try {
+      await redis.del(CACHE_KEYS.repoTree(repo!.id));
+    } catch (e) {
+      // Redis not configured, skip
+    }
+  } catch (error) {
+    console.error(`Failed to sync ${owner}/${name}:`, error);
+    throw error;
   }
-
-  // Update repo sync state
-  await supabase
-    .from('repos')
-    .update({
-      last_sha: latestSha,
-      last_synced_at: new Date().toISOString(),
-    })
-    .eq('id', repo!.id);
-
-  // Invalidate cache
-  await redis.del(CACHE_KEYS.repoTree(repo!.id));
 }
 
 // Index a single file
@@ -141,9 +156,13 @@ async function indexFile(repoId: number, owner: string, name: string, path: stri
       .insert(symbolsToInsert);
   }
 
-  // Invalidate cache
-  await redis.del(CACHE_KEYS.parsedFile(repoId, path));
-  await redis.del(CACHE_KEYS.symbolList(repoId, path));
+  // Invalidate cache (skip if Redis not configured)
+  try {
+    await redis.del(CACHE_KEYS.parsedFile(repoId, path));
+    await redis.del(CACHE_KEYS.symbolList(repoId, path));
+  } catch (e) {
+    // Redis not configured, skip
+  }
 }
 
 // Sync specific files (for webhook)
@@ -163,6 +182,10 @@ export async function syncFiles(repoId: number, owner: string, name: string, pat
     .update({ last_synced_at: new Date().toISOString() })
     .eq('id', repoId);
 
-  // Invalidate tree cache
-  await redis.del(CACHE_KEYS.repoTree(repoId));
+  // Invalidate tree cache (skip if Redis not configured)
+  try {
+    await redis.del(CACHE_KEYS.repoTree(repoId));
+  } catch (e) {
+    // Redis not configured, skip
+  }
 }
