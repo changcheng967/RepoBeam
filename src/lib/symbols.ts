@@ -18,28 +18,21 @@ const NIM_API_KEY = process.env.NIM_API_KEY || '';
 // Using devstral for best code understanding and reasoning
 const NIM_MODEL = 'mistralai/devstral-2-123b-instruct-2512';
 
-const SYMBOL_PROMPT = `You are a code parser. Extract all functions, classes, structs, interfaces, types, and enums from the given code.
+const SYMBOL_PROMPT = `Extract all functions, classes, structs, interfaces, types, and enums from the code below.
 
-Rules:
-- Return ONLY a JSON array
-- Each symbol must have: name, kind (function/class/struct/interface/type/enum/method), startLine, endLine
-- Line numbers are 1-indexed
-- DO NOT include control flow keywords (if, for, while, switch, etc.)
-- DO NOT include bare braces or operators
-- Only include actual named declarations
-
-Example output format:
-[
-  {"name": "MyFunction", "kind": "function", "startLine": 5, "endLine": 15},
-  {"name": "MyClass", "kind": "class", "startLine": 20, "endLine": 50}
-]
+CRITICAL RULES:
+1. Return ONLY valid JSON in this exact format: {"symbols": [...]}
+2. Each symbol: {{"name": string, "kind": "function|class|struct|interface|type|enum|method", "startLine": number, "endLine": number}}
+3. Line numbers are 1-indexed
+4. NEVER include: if, for, while, switch, case, else, do, return, break, continue, try, catch
+5. Only actual named declarations
 
 Language: {language}
 
-Code:
+Code (first {codeLength} chars):
 {code}
 
-Return ONLY the JSON array, no explanation:`;
+Return ONLY {"symbols": [...]} - no other text:`;
 
 export async function extractSymbolsWithLLM(
   code: string,
@@ -50,9 +43,11 @@ export async function extractSymbolsWithLLM(
     return [];
   }
 
+  const truncatedCode = code.slice(0, 50000); // Limit for context
   const prompt = SYMBOL_PROMPT
     .replace('{language}', language)
-    .replace('{code}', code.slice(0, 50000)); // Limit code length for context
+    .replace('{codeLength}', truncatedCode.length.toLocaleString())
+    .replace('{code}', truncatedCode);
 
   try {
     const response = await fetch(NIM_API_URL, {
@@ -76,15 +71,21 @@ export async function extractSymbolsWithLLM(
     });
 
     if (!response.ok) {
-      console.error('NIM API error:', response.status, response.statusText);
+      const errorText = await response.text();
+      console.error('NIM API error:', response.status, response.statusText, errorText);
       return [];
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
 
+    console.log('[NIM] Raw response length:', content?.length || 0);
+    if (content && content.length < 500) {
+      console.log('[NIM] Response preview:', content.slice(0, 200));
+    }
+
     if (!content) {
-      console.error('No content from NIM');
+      console.error('No content from NIM, full response:', JSON.stringify(data));
       return [];
     }
 
@@ -104,10 +105,14 @@ export async function extractSymbolsWithLLM(
     }
 
     const symbols = (parsed as ExtractResponse).symbols || (parsed as { symbols?: ExtractedSymbol[] }).symbols || [];
-    return symbols.filter(s =>
+    const filtered = symbols.filter(s =>
       s.name &&
-      !['if', 'for', 'while', 'switch', 'case', 'else', 'do', 'return', 'break', 'continue'].includes(s.name)
+      !['if', 'for', 'while', 'switch', 'case', 'else', 'do', 'return', 'break', 'continue', 'try', 'catch'].includes(s.name)
     );
+
+    console.log('[NIM] Parsed', symbols.length, 'symbols, filtered to', filtered.length);
+
+    return filtered;
   } catch (error) {
     console.error('Error extracting symbols with LLM:', error);
     return [];
