@@ -5,6 +5,13 @@ import { extractLineRange, extractSymbolsRegex } from '@/lib/parser';
 
 export const dynamic = 'force-dynamic';
 
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'internal-web-ui';
+
+// Check if request is from internal web UI
+function isInternalRequest(request: NextRequest): boolean {
+  return request.headers.get('x-internal-request') === INTERNAL_SECRET;
+}
+
 interface FileResponse {
   content: string;
   language: string;
@@ -100,12 +107,12 @@ export async function GET(request: NextRequest) {
     responseStartLine = startLine;
     responseEndLine = endLine;
   }
-  // Handle truncation
-  else if (estimateTokens(content) > maxTokens) {
+  // Handle truncation - ONLY for external API requests, not web UI
+  else if (!isInternalRequest(request) && estimateTokens(content) > maxTokens) {
     const targetLength = maxTokens * 4;
     content = content.substring(0, targetLength);
     truncated = true;
-    hint = `Response truncated at ${maxTokens} tokens. Use startLine/endLine or function parameter to get specific sections.`;
+    hint = `Response truncated at ${maxTokens} tokens. Use ?startLine=N&endLine=M or ?function=name to get specific sections, or ?maxTokens= for higher limit.`;
     responseEndLine = content.split('\n').length;
   }
 

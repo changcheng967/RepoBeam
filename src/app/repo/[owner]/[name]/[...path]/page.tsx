@@ -355,14 +355,6 @@ export default function FilePage() {
             )}
           </div>
 
-          {/* Large file warning */}
-          {file && Math.ceil(file.content.length / 4) > 20000 && !selectedSymbol && (
-            <div className="bg-warning/10 border-b border-warning/20 px-4 py-2 text-xs flex items-center gap-2 flex-shrink-0">
-              <Sparkles className="h-3.5 w-3.5 text-warning" />
-              <span className="text-warning">Large file ({Math.ceil(file.content.length / 4).toLocaleString()} tokens) — use the symbol sidebar to navigate specific functions</span>
-            </div>
-          )}
-
           {/* Code */}
           <ScrollArea className="flex-1">
             {loading ? (
