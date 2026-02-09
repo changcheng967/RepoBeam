@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, Repo, File, Symbol, createResponse, estimateTokens } from '@/lib/supabase';
-import { auth, unauthorized, badRequest, parseRepoParam, DEFAULT_MAX_TOKENS } from '@/lib/api';
+import { auth, unauthorized, badRequest, parseRepoParam, DEFAULT_MAX_TOKENS, isInternalRequest } from '@/lib/api';
 import { extractLineRange, extractSymbolsRegex } from '@/lib/parser';
 
 export const dynamic = 'force-dynamic';
-
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'internal-web-ui';
-
-// Check if request is from internal web UI
-function isInternalRequest(request: NextRequest): boolean {
-  return request.headers.get('x-internal-request') === INTERNAL_SECRET;
-}
 
 interface FileResponse {
   content: string;

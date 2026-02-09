@@ -7,7 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Search, FileCode, RefreshCw, Home, Code, FileText, Clock, Loader2, ChevronRight
+  Search, FileCode, RefreshCw, Home, Code, FileText, Clock, Loader2, ChevronRight,
+  Copy, Check, ExternalLink
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { internalFetch } from "@/lib/api";
@@ -28,6 +29,18 @@ interface RepoStats {
   error?: string;
 }
 
+function useCopyToClipboard() {
+  const [copied, setCopied] = useState(false);
+
+  const copy = useCallback((text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, []);
+
+  return { copy, copied };
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [stats, setStats] = useState<RepoStats>({ syncing: false, filesIndexed: 0, lastSynced: null });
@@ -35,6 +48,7 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const { copy, copied } = useCopyToClipboard();
 
   const fetchStats = useCallback(async () => {
     try {
@@ -296,16 +310,110 @@ export default function HomePage() {
             {/* API Info for LLMs */}
             <Card className="border-border/50 bg-muted/30">
               <CardContent className="p-4">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-3">
                   <Code className="h-4 w-4 text-primary" />
-                  <h3 className="font-medium text-sm">LLM Access</h3>
+                  <h3 className="font-medium text-sm">LLM API Access</h3>
+                  <Badge variant="secondary" className="ml-auto text-xs">No Auth Required</Badge>
                 </div>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Point any AI with web access to this URL to explore the codebase:
+                <p className="text-xs text-muted-foreground mb-4">
+                  All endpoints are publicly accessible. Share these URLs with any AI that has web access.
                 </p>
-                <code className="text-xs bg-background px-2 py-1 rounded block font-mono break-all">
-                  {typeof window !== "undefined" ? window.location.origin : ""}/api/help
-                </code>
+
+                {/* Main API Help URL */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium">API Documentation</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => copy(`${typeof window !== "undefined" ? window.location.origin : ""}/api/help`)}
+                    >
+                      {copied ? <><Check className="h-3 w-3 mr-1" />Copied</> : <><Copy className="h-3 w-3 mr-1" />Copy</>}
+                    </Button>
+                  </div>
+                  <code className="text-xs bg-background px-2 py-1.5 rounded block font-mono break-all border border-border/50">
+                    /api/help
+                  </code>
+                </div>
+
+                {/* Example API URLs */}
+                <div className="space-y-3">
+                  <p className="text-xs font-medium text-muted-foreground">Example API Endpoints:</p>
+
+                  <div className="space-y-2">
+                    <div>
+                      <span className="text-xs text-muted-foreground">Get file tree:</span>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <code className="text-xs bg-background px-2 py-1 rounded font-mono flex-1 truncate">/api/tree?repo=changcheng967/Luminex</code>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0"
+                          onClick={() => copy(`${typeof window !== "undefined" ? window.location.origin : ""}/api/tree?repo=changcheng967/Luminex`)}
+                        >
+                          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-xs text-muted-foreground">Search code:</span>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <code className="text-xs bg-background px-2 py-1 rounded font-mono flex-1 truncate">/api/search?repo=changcheng967/Luminex&q=Bitboard</code>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0"
+                          onClick={() => copy(`${typeof window !== "undefined" ? window.location.origin : ""}/api/search?repo=changcheng967/Luminex&q=Bitboard`)}
+                        >
+                          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-xs text-muted-foreground">Get file content:</span>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <code className="text-xs bg-background px-2 py-1 rounded font-mono flex-1 truncate">/api/file?repo=changcheng967/Luminex&path=src/file.cpp</code>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0"
+                          onClick={() => copy(`${typeof window !== "undefined" ? window.location.origin : ""}/api/file?repo=changcheng967/Luminex&path=src/file.cpp`)}
+                        >
+                          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-xs text-muted-foreground">Get line range:</span>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <code className="text-xs bg-background px-2 py-1 rounded font-mono flex-1 truncate">/api/file?repo=...&path=...&startLine=1&endLine=100</code>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0"
+                          onClick={() => copy(`${typeof window !== "undefined" ? window.location.origin : ""}/api/file?repo=changcheng967/Luminex&path=src/file.cpp&startLine=1&endLine=100`)}
+                        >
+                          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-border/50">
+                  <a
+                    href="/api/help"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    View full API documentation <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
               </CardContent>
             </Card>
           </div>

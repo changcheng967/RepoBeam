@@ -1,21 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_KEY = process.env.API_KEY;
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'internal-web-ui';
 
+// Authentication is DISABLED - all API endpoints are publicly accessible
+// This makes the API fully LLM-friendly via URL-only access
 export function auth(request: NextRequest): boolean {
-  // Allow internal web UI requests
-  const internalHeader = request.headers.get('x-internal-request');
-  if (internalHeader === INTERNAL_SECRET) return true;
+  return true;
+}
 
-  // Check API key for external requests
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader) return false;
-
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') return false;
-
-  return parts[1] === API_KEY;
+// Check if request is from internal web UI (for caching purposes)
+export function isInternalRequest(request: NextRequest): boolean {
+  return request.headers.get('x-internal-request') === INTERNAL_SECRET;
 }
 
 export function unauthorized(): NextResponse {
