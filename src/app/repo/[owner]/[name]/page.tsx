@@ -4,12 +4,10 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { ChevronRight, File, Home, Search, RefreshCw, GitBranch, Clock, FileCode, Loader2, AlertCircle, X } from "lucide-react";
+import { ChevronRight, File, Home, RefreshCw, Clock, FileCode, Loader2, AlertCircle } from "lucide-react";
 import { internalFetch } from "@/lib/api";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 
 interface FileNode {
   path: string;
@@ -18,14 +16,10 @@ interface FileNode {
   lineCount: number;
 }
 
-interface RepoInfo {
-  id: number;
-  full_name: string;
-  description: string | null;
-  language: string | null;
-  last_synced_at: string | null;
-  last_sha: string | null;
-}
+const LUMINEX_REPO = {
+  owner: "changcheng967",
+  name: "Luminex",
+};
 
 const getIconForPath = (path: string) => {
   const ext = path.split(".").pop()?.toLowerCase();
@@ -34,38 +28,18 @@ const getIconForPath = (path: string) => {
     py: "Py", js: "JS", jsx: "JS", ts: "TS", tsx: "TS",
     rs: "Rs", go: "Go", java: "Jv", kt: "Kt", swift: "Sw",
     css: "CSS", html: "HTML", json: "JSON", md: "MD", yaml: "YML",
-    sh: "SH", bash: "SH", sql: "SQL", xml: "XML",
+    sh: "SH", bash: "SH", sql: "SQL",
   };
   return icons[ext || ""] || "";
-};
-
-const getKindColor = (lang: string | null) => {
-  if (!lang) return "bg-muted";
-  const colors: Record<string, string> = {
-    "C++": "bg-blue-500/20 text-blue-400",
-    Py: "bg-yellow-500/20 text-yellow-400",
-    JS: "bg-yellow-400/20 text-yellow-300",
-    TS: "bg-blue-400/20 text-blue-300",
-    Rs: "bg-orange-500/20 text-orange-400",
-    Go: "bg-cyan-500/20 text-cyan-400",
-    Java: "bg-red-500/20 text-red-400",
-    HTML: "bg-orange-400/20 text-orange-300",
-    CSS: "bg-blue-500/20 text-blue-400",
-    JSON: "bg-green-500/20 text-green-400",
-    MD: "bg-slate-500/20 text-slate-400",
-  };
-  return colors[getIconForPath("file." + lang)] || "bg-muted";
 };
 
 export default function RepoPage() {
   const params = useParams();
   const router = useRouter();
-  const owner = params.owner as string;
-  const name = params.name as string;
-  const repoName = `${owner}/${name}`;
+  const repoName = `${LUMINEX_REPO.owner}/${LUMINEX_REPO.name}`;
 
   const [files, setFiles] = useState<FileNode[]>([]);
-  const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,14 +48,13 @@ export default function RepoPage() {
 
   useEffect(() => {
     fetchData();
-    // Poll for sync status if syncing
     const interval = setInterval(() => {
       if (syncing) {
         fetchSyncStatus();
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [owner, name, syncing]);
+  }, [syncing]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -92,21 +65,14 @@ export default function RepoPage() {
         internalFetch(`/api/sync?repo=${encodeURIComponent(repoName)}`),
       ]);
 
-      if (!treeRes.ok && treeRes.status === 404) {
-        setError("Repository not found. Add it first from the home page.");
-        setFiles([]);
-        setLoading(false);
-        return;
-      }
-
       if (treeRes.ok) {
         const data = await treeRes.json();
-        setFiles(data.data?.files || data.data || []);
+        setFiles(data.data?.files || []);
       }
 
       if (syncRes.ok) {
         const syncData = await syncRes.json();
-        setRepoInfo(syncData.data?.repo || null);
+        setLastSynced(syncData.data?.repo?.last_synced_at || null);
         setSyncing(syncData.data?.currentlySyncing || false);
       }
     } catch (error) {
@@ -124,7 +90,6 @@ export default function RepoPage() {
         const data = await res.json();
         setSyncing(data.data?.currentlySyncing || false);
         if (!data.data?.currentlySyncing) {
-          // Sync completed, refresh files
           fetchData();
         }
       }
@@ -137,10 +102,7 @@ export default function RepoPage() {
     if (syncing) return;
     setSyncing(true);
     try {
-      const res = await internalFetch(`/api/sync?repo=${encodeURIComponent(repoName)}&force=true`, { method: "POST" });
-      if (res.ok) {
-        // Sync started
-      }
+      await internalFetch(`/api/sync?repo=${encodeURIComponent(repoName)}&force=true`, { method: "POST" });
     } catch (error) {
       console.error("Failed to sync:", error);
       setSyncing(false);
@@ -150,11 +112,8 @@ export default function RepoPage() {
   const toggleFolder = (path: string) => {
     setExpandedFolders(prev => {
       const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
       return next;
     });
   };
@@ -162,16 +121,13 @@ export default function RepoPage() {
   // Build tree structure
   const tree = useMemo(() => {
     const root: any = { name: "", children: [], isFile: false, path: "" };
-
     for (const file of files) {
       const parts = file.path.split("/");
       let current = root;
-
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
         const isFile = i === parts.length - 1;
         const path = parts.slice(0, i + 1).join("/");
-
         let existing = current.children?.find((c: any) => c.name === part);
         if (!existing) {
           existing = {
@@ -189,21 +145,18 @@ export default function RepoPage() {
         current = existing;
       }
     }
-
     const sortNodes = (nodes: any[]) => {
       return nodes.sort((a, b) => {
         if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
         return a.name.localeCompare(b.name);
       });
     };
-
     const sortTree = (node: any) => {
       if (node.children) {
         node.children = sortNodes(node.children);
         node.children.forEach(sortTree);
       }
     };
-
     sortTree(root);
     return root.children || [];
   }, [files]);
@@ -219,15 +172,12 @@ export default function RepoPage() {
 
   const filteredTree = useMemo(() => {
     if (!searchQuery) return tree;
-
     const filterTree = (nodes: any[], query: string): any[] => {
       const results: any[] = [];
       const q = query.toLowerCase();
-
       for (const node of nodes) {
         const nameMatch = node.name.toLowerCase().includes(q);
         const filteredChildren = node.children ? filterTree(node.children, query) : [];
-
         if (nameMatch || filteredChildren.length > 0) {
           results.push({
             ...node,
@@ -238,7 +188,6 @@ export default function RepoPage() {
       }
       return results;
     };
-
     return filterTree(tree, searchQuery);
   }, [tree, searchQuery]);
 
@@ -261,7 +210,7 @@ export default function RepoPage() {
             if (!node.isFile) {
               toggleFolder(node.path);
             } else {
-              router.push(`/repo/${owner}/${name}/${node.path}`);
+              router.push(`/repo/${LUMINEX_REPO.owner}/${LUMINEX_REPO.name}/${node.path}`);
             }
           }}
         >
@@ -313,13 +262,8 @@ export default function RepoPage() {
             </Button>
             <Separator orientation="vertical" className="h-4" />
             <div className="flex items-center gap-2">
-              <span className="text-sm font-mono">{owner}</span>
-              <span className="text-muted-foreground/50">/</span>
-              <span className="text-sm font-mono">{name}</span>
+              <span className="text-sm font-mono">Luminex</span>
             </div>
-            {repoInfo?.language && (
-              <Badge variant="secondary" className="text-xs">{repoInfo.language}</Badge>
-            )}
           </div>
           <div className="flex items-center gap-2">
             {error && (
@@ -334,15 +278,6 @@ export default function RepoPage() {
                 <span className="hidden sm:inline">Syncing...</span>
               </div>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => router.push("/search")}
-            >
-              <Search className="h-3.5 w-3.5 mr-1.5" />
-              <span className="hidden sm:inline">Search</span>
-            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -360,7 +295,7 @@ export default function RepoPage() {
       {/* Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar - File Tree */}
-        <aside className="w-64 border-r border-border/50 flex-shrink-0 flex flex-col">
+        <aside className="w-72 border-r border-border/50 flex-shrink-0 flex flex-col mx-auto">
           {/* Repo Stats */}
           <div className="p-3 border-b border-border/50">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -369,33 +304,21 @@ export default function RepoPage() {
               <Separator orientation="vertical" className="h-3" />
               <span>{(totalTokens / 1000).toFixed(0)}k tokens</span>
             </div>
-            {repoInfo?.last_synced_at && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
-                <Clock className="h-3 w-3" />
-                <span>Synced {formatTimeAgo(repoInfo.last_synced_at)}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+              <Clock className="h-3 w-3" />
+              <span>Synced {formatTimeAgo(lastSynced)}</span>
+            </div>
           </div>
 
           {/* Search */}
           <div className="p-3 border-b border-border/50">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Filter files..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 h-8 text-sm bg-muted/30 border-border/50"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
+            <input
+              type="text"
+              placeholder="Filter files..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-8 px-2 text-sm bg-muted/30 border-border/50 rounded"
+            />
             <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
               <span>{filteredFiles.toLocaleString()} {searchQuery ? "matching" : ""} files</span>
             </div>

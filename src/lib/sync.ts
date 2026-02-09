@@ -1,7 +1,6 @@
 import { supabase, estimateTokens } from './supabase';
 import { getRepo, getTree, getFileContent, getLatestCommit } from './github';
 import { detectLanguage, countLines } from './parser';
-import { extractSymbolsWithLLM } from './symbols';
 
 // Supported source code extensions for indexing
 const SOURCE_EXTENSIONS = [
@@ -136,52 +135,13 @@ async function indexFile(repoId: number, owner: string, name: string, path: stri
 
   if (!file) return;
 
-  // Delete old symbols
-  const { data: oldSymbols } = await supabase
-    .from('symbols')
-    .select('*')
-    .eq('file_id', file.id);
-  console.log(`[symbols] Deleting ${oldSymbols?.length || 0} old symbols from ${path}`);
-
+  // Clean up any old symbols (no longer using symbol extraction)
   await supabase
     .from('symbols')
     .delete()
     .eq('file_id', file.id);
 
-  // Extract and insert symbols using LLM
-  console.log(`[symbols] Extracting from ${path} using LLM (language: ${language})...`);
-  const symbols = await extractSymbolsWithLLM(content, language);
-  console.log(`[symbols] Found ${symbols.length} symbols in ${path}`);
-  if (symbols.length > 0) {
-    console.log(`[symbols] Sample symbols:`, symbols.slice(0, 3).map(s => s.name));
-  }
-
-  if (symbols.length > 0) {
-    const symbolsToInsert = symbols.map(s => ({
-      file_id: file.id,
-      name: s.name,
-      kind: s.kind,
-      signature: s.signature || null,
-      start_line: s.startLine,
-      end_line: s.endLine,
-      token_count: estimateTokens(
-        content.split('\n').slice(s.startLine - 1, s.endLine).join('\n')
-      ),
-      parent_symbol: null,
-    }));
-
-    const { error: insertError } = await supabase
-      .from('symbols')
-      .insert(symbolsToInsert);
-
-    if (insertError) {
-      console.error(`[symbols] Failed to insert symbols:`, insertError);
-    } else {
-      console.log(`[symbols] Inserted ${symbolsToInsert.length} symbols into database`);
-    }
-  } else {
-    console.warn(`[symbols] No symbols extracted for ${path} - check NIM_API_KEY`);
-  }
+  console.log(`[sync] Indexed ${path} (${lineCount} lines, ${tokenCount} tokens)`);
 }
 
 // Sync specific files (for webhook)

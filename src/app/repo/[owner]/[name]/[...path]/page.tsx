@@ -1,15 +1,13 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import {
-  ChevronLeft, Home, FileCode, Copy, Search, Check,
-  Code, Braces, Type, Component, Layers, Sparkles, ChevronRight, File, Link2, Loader2, ExternalLink
+  ChevronLeft, Home, FileCode, Copy, Search, Check, ExternalLink,
+  Code, ChevronRight, File, Loader2, Hash
 } from "lucide-react";
 import { internalFetch } from "@/lib/api";
 import { createHighlighter } from "shiki";
@@ -21,51 +19,28 @@ interface FileData {
   startLine: number;
   endLine: number;
   path: string;
-}
-
-interface Symbol {
-  name: string;
-  kind: string;
-  startLine: number;
-  endLine: number;
   tokenCount: number;
-  signature: string | null;
 }
 
 const LANGUAGE_MAP: Record<string, string> = {
   javascript: "javascript", typescript: "typescript", tsx: "tsx", jsx: "jsx",
-  python: "python", cpp: "cpp", c: "c", "c++": "cpp", go: "go", rust: "rust",
-  java: "java", ruby: "ruby", php: "php", swift: "swift", kotlin: "kotlin",
-  scala: "scala", shell: "bash", sh: "bash", html: "html", css: "css",
-  json: "json", yaml: "yaml", yml: "yaml", markdown: "markdown", md: "markdown",
+  python: "python", cpp: "cpp", c: "c", "c++": "cpp", cc: "cpp", h: "cpp", hpp: "cpp",
+  go: "go", rust: "rust", java: "java", ruby: "ruby", php: "php",
+  swift: "swift", kotlin: "kotlin", scala: "scala", shell: "bash",
+  sh: "bash", html: "html", css: "css", json: "json",
+  yaml: "yaml", yml: "yaml", markdown: "markdown", md: "markdown",
 };
 
 const getIconForPath = (path: string) => {
   const ext = path.split(".").pop()?.toLowerCase();
   const icons: Record<string, string> = {
-    cpp: "C++", cc: "C++", h: "C++", hpp: "C++",
+    cpp: "C++", cc: "C++", h: "C++", hpp: "C++", cxx: "C++",
     py: "Py", js: "JS", jsx: "JS", ts: "TS", tsx: "TS",
-    rs: "Rs", go: "Go", java: "Jv",
-    css: "CSS", html: "HTML", json: "JSON", md: "MD",
+    rs: "Rs", go: "Go", java: "Jv", kt: "Kt", swift: "Sw",
+    css: "CSS", html: "HTML", json: "JSON", md: "MD", yaml: "YML",
+    sh: "SH", bash: "SH", sql: "SQL",
   };
   return icons[ext || ""] || "";
-};
-
-const getKindIcon = (kind: string) => {
-  const icons: Record<string, any> = {
-    function: Code, class: Component, struct: Layers,
-    interface: Type, type: Braces, enum: Sparkles,
-  };
-  return icons[kind] || FileCode;
-};
-
-const getKindColor = (kind: string) => {
-  const colors: Record<string, string> = {
-    function: "text-blue-400", class: "text-green-400",
-    struct: "text-yellow-400", interface: "text-purple-400",
-    type: "text-pink-400", enum: "text-orange-400",
-  };
-  return colors[kind] || "text-muted-foreground";
 };
 
 let highlighter: Awaited<ReturnType<typeof createHighlighter>> | null = null;
@@ -78,16 +53,25 @@ export default function FilePage() {
   const path = Array.isArray(params.path) ? params.path.join("/") : (params.path || "");
   const repoName = `${owner}/${name}`;
 
+  // Get line number from hash (e.g., #150)
+  const initialLine = useMemo(() => {
+    if (typeof window === "undefined") return 1;
+    const hash = window.location.hash.slice(1);
+    const lineNum = parseInt(hash);
+    return isNaN(lineNum) ? 1 : Math.max(1, lineNum);
+  }, []);
+
   const [file, setFile] = useState<FileData | null>(null);
-  const [symbols, setSymbols] = useState<Symbol[]>([]);
   const [files, setFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [extracting, setExtracting] = useState(false);
-  const [selectedSymbol, setSelectedSymbol] = useState<Symbol | null>(null);
   const [highlightedCode, setHighlightedCode] = useState("");
   const [copied, setCopied] = useState(false);
-  const [copiedApi, setCopiedApi] = useState<string | null>(null);
+  const [copiedApi, setCopiedApi] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [selectedLines, setSelectedLines] = useState<Set<number>>(new Set());
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     fetchData();
@@ -101,85 +85,34 @@ export default function FilePage() {
     }
   }, [file]);
 
-  const initHighlighter = async () => {
-    if (!highlighter) {
-      highlighter = await createHighlighter({
-        themes: ["github-dark-dimmed"],
-        langs: [
-          "javascript", "typescript", "tsx", "jsx", "python",
-          "cpp", "c", "go", "rust", "java", "ruby", "php",
-          "swift", "kotlin", "scala", "bash", "html", "css",
-          "json", "yaml", "markdown"
-        ],
-      });
+  useEffect(() => {
+    // Scroll to line from hash
+    if (initialLine > 1) {
+      setTimeout(() => {
+        const element = document.querySelector(`[data-line="${initialLine}"]`);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+          element.classList.add("bg-primary/20");
+          setTimeout(() => element.classList.remove("bg-primary/20"), 2000);
+        }
+      }, 100);
     }
-  };
-
-  const highlightCode = async (code: string, language: string | undefined) => {
-    if (!highlighter) {
-      setHighlightedCode(escapeHtml(code));
-      return;
-    }
-    const lang = (language && LANGUAGE_MAP[language.toLowerCase()]) || "text";
-    try {
-      const html = highlighter.codeToHtml(code, {
-        lang,
-        theme: "github-dark-dimmed"
-      });
-      setHighlightedCode(html);
-    } catch {
-      setHighlightedCode(escapeHtml(code));
-    }
-  };
-
-  const escapeHtml = (text: string) => {
-    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  };
+  }, [initialLine]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [fileRes, symbolsRes] = await Promise.all([
-        internalFetch(`/api/file?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}`),
-        internalFetch(`/api/symbols?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}`),
-      ]);
-
-      if (fileRes.ok) {
-        const fileData = await fileRes.json();
-        setFile(fileData.data);
-      }
-
-      if (symbolsRes.ok) {
-        const symbolsData = await symbolsRes.json();
-        setSymbols(symbolsData.data || []);
-
-        // If no symbols exist, trigger extraction
-        if (!symbolsData.data || symbolsData.data.length === 0) {
-          extractSymbols();
-        }
+      const res = await internalFetch(`/api/file?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}`);
+      if (res.ok) {
+        const json = await res.json();
+        setFile(json.data);
+      } else {
+        setFile(null);
       }
     } catch (error) {
-      console.error("Failed to fetch data:", error);
+      console.error("Failed to fetch file:", error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const extractSymbols = async () => {
-    setExtracting(true);
-    try {
-      const res = await internalFetch(
-        `/api/symbols/extract?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}`,
-        { method: 'POST' }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setSymbols(data.symbols || []);
-      }
-    } catch (error) {
-      console.error("Failed to extract symbols:", error);
-    } finally {
-      setExtracting(false);
     }
   };
 
@@ -188,32 +121,44 @@ export default function FilePage() {
       const res = await internalFetch(`/api/tree?repo=${encodeURIComponent(repoName)}`);
       if (res.ok) {
         const data = await res.json();
-        const fileList = data.data?.files || data.data || [];
-        setFiles(fileList);
-        // Auto-expand root folders
-        const rootFolders = fileList
-          .map((f: any) => f.path.split("/")[0])
-          .filter((p: string, i: number, arr: string[]) => arr.indexOf(p) === i && p.includes("/"));
-        setExpandedFolders(new Set(rootFolders));
+        setFiles(data.data?.files || []);
       }
     } catch (error) {
-      console.error("Failed to fetch files:", error);
+      console.error("Failed to fetch tree:", error);
     }
   };
 
-  const selectSymbol = async (symbol: Symbol) => {
-    try {
-      const res = await internalFetch(
-        `/api/function?repo=${encodeURIComponent(repoName)}&path=${encodeURIComponent(path)}&name=${symbol.name}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setFile(data.data);
-        setSelectedSymbol(symbol);
-      }
-    } catch (error) {
-      console.error("Failed to fetch function:", error);
+  const initHighlighter = async () => {
+    if (!highlighter) {
+      highlighter = await createHighlighter({
+        themes: ["github-dark-dimmed"],
+        langs: [Object.values(LANGUAGE_MAP)[0] as any],
+      });
     }
+  };
+
+  const highlightCode = async (code: string, language: string) => {
+    try {
+      const lang = (language && LANGUAGE_MAP[language.toLowerCase()]) || "text";
+      if (!highlighter) {
+        setHighlightedCode(
+          `<pre class="shiki" style="background:#0d1117;color:#c9d1d9"><code>${escapeHtml(code)}</code></pre>`
+        );
+        return;
+      }
+      const html = highlighter.codeToHtml(code, {
+        lang: lang as any,
+        theme: "github-dark-dimmed",
+      });
+      setHighlightedCode(html);
+    } catch (error) {
+      console.error("Highlight error:", error);
+      setHighlightedCode(`<pre class="shiki"><code>${escapeHtml(code)}</code></pre>`);
+    }
+  };
+
+  const escapeHtml = (text: string) => {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   };
 
   const copyCode = () => {
@@ -224,12 +169,58 @@ export default function FilePage() {
     }
   };
 
-  const copyApiUrl = (symbol: Symbol) => {
-    const url = `${window.location.origin}/api/function?repo=${repoName}&path=${path}&name=${symbol.name}`;
+  const copyApiUrl = () => {
+    const url = `${window.location.origin}/api/file?repo=${repoName}&path=${path}`;
     navigator.clipboard.writeText(url);
-    setCopiedApi(symbol.name);
-    setTimeout(() => setCopiedApi(null), 2000);
+    setCopiedApi(true);
+    setTimeout(() => setCopiedApi(false), 2000);
   };
+
+  const copySelectedLines = () => {
+    if (selectedLines.size === 0) return;
+    const lines = file?.content.split("\n") || [];
+    const selected = lines
+      .filter((_, i) => selectedLines.has(i + 1))
+      .join("\n");
+    navigator.clipboard.writeText(selected);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleLineClick = (lineNum: number) => {
+    if (isDragging && dragStart) {
+      // Range selection
+      const start = Math.min(dragStart, lineNum);
+      const end = Math.max(dragStart, lineNum);
+      const newSelection = new Set<number>();
+      for (let i = start; i <= end; i++) {
+        newSelection.add(i);
+      }
+      setSelectedLines(newSelection);
+    } else if (selectedLines.has(lineNum)) {
+      // Deselect
+      const newSelection = new Set(selectedLines);
+      newSelection.delete(lineNum);
+      setSelectedLines(newSelection);
+    } else {
+      // Select single line
+      setSelectedLines(new Set([lineNum]));
+    }
+  };
+
+  const handleLineMouseDown = (lineNum: number) => {
+    setIsDragging(true);
+    setDragStart(lineNum);
+  };
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setDragStart(null);
+    };
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => document.removeEventListener("mouseup", handleMouseUp);
+  }, []);
 
   // Build tree structure
   const tree = useMemo(() => {
@@ -264,6 +255,27 @@ export default function FilePage() {
     return root.children || [];
   }, [files]);
 
+  const filteredTree = useMemo(() => {
+    if (!searchQuery) return tree;
+    const filterTree = (nodes: any[], query: string): any[] => {
+      const results: any[] = [];
+      const q = query.toLowerCase();
+      for (const node of nodes) {
+        const nameMatch = node.name.toLowerCase().includes(q);
+        const filteredChildren = node.children ? filterTree(node.children, query) : [];
+        if (nameMatch || filteredChildren.length > 0) {
+          results.push({
+            ...node,
+            children: filteredChildren.length > 0 ? filteredChildren : node.children,
+            autoExpand: filteredChildren.length > 0,
+          });
+        }
+      }
+      return results;
+    };
+    return filterTree(tree, searchQuery);
+  }, [tree, searchQuery]);
+
   const toggleFolder = (folderPath: string) => {
     setExpandedFolders(prev => {
       const next = new Set(prev);
@@ -274,7 +286,7 @@ export default function FilePage() {
   };
 
   const renderNode = (node: any, depth: number = 0): React.ReactNode => {
-    const isExpanded = expandedFolders.has(node.path);
+    const isExpanded = expandedFolders.has(node.path) || node.autoExpand;
     const isActive = node.path === path;
 
     return (
@@ -313,19 +325,27 @@ export default function FilePage() {
     );
   };
 
-  // Group symbols by kind
-  const symbolsByKind = useMemo(() => {
-    const groups: Record<string, Symbol[]> = {};
-    for (const sym of symbols) {
-      if (!groups[sym.kind]) groups[sym.kind] = [];
-      groups[sym.kind].push(sym);
-    }
-    return groups;
-  }, [symbols]);
+  const lines = file?.content.split("\n") || [];
+  const startLine = file?.startLine || 1;
 
-  const displayContent = selectedSymbol ? file : file;
-  const displayLines = displayContent?.content.split("\n") || [];
-  const startLine = selectedSymbol ? file?.startLine || 1 : 1;
+  const handleSearchInFile = () => {
+    if (!searchQuery.trim()) return;
+    const query = searchQuery.toLowerCase();
+    const matchingLines: number[] = [];
+    lines.forEach((line, i) => {
+      if (line.toLowerCase().includes(query)) {
+        matchingLines.push(i + 1);
+      }
+    });
+    if (matchingLines.length > 0) {
+      setSelectedLines(new Set(matchingLines));
+      // Scroll to first match
+      const element = document.querySelector(`[data-line="${matchingLines[0]}"]`);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -338,142 +358,188 @@ export default function FilePage() {
             </Button>
             <Separator orientation="vertical" className="h-4" />
             <div className="flex items-center gap-1 text-sm">
-              <span className="font-mono text-muted-foreground">{owner}</span>
+              <span className="font-mono text-muted-foreground">Luminex</span>
               <span className="text-muted-foreground/50">/</span>
-              <span className="font-mono text-muted-foreground">{name}</span>
-              <span className="text-muted-foreground/50">/</span>
-              <span className="font-mono truncate max-w-[200px]">{path}</span>
+              <span className="font-mono truncate max-w-[300px]">{path}</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs">{file?.language || "Unknown"}</Badge>
+            <span className="text-xs text-muted-foreground">
+              {file?.lineCount || 0} lines • {file?.tokenCount || 0} tokens
+            </span>
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={copyCode}>
               {copied ? <Check className="h-3.5 w-3.5 mr-1" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
-              {copied ? "Copied" : "Copy"}
+              {copied ? "Copied" : "Copy Code"}
+            </Button>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={copyApiUrl}>
+              {copiedApi ? <Check className="h-3.5 w-3.5 mr-1" /> : <ExternalLink className="h-3.5 w-3.5 mr-1" />}
+              {copiedApi ? "Copied" : "API URL"}
             </Button>
           </div>
         </div>
       </header>
 
-      {/* Three-column layout */}
+      {/* Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left sidebar - File tree */}
-        <aside className="w-60 border-r border-border/50 flex-shrink-0 flex flex-col">
+        {/* Sidebar - File Tree */}
+        <aside className="w-56 border-r border-border/50 flex-shrink-0 flex flex-col">
+          <div className="p-3 border-b border-border/50">
+            <input
+              type="text"
+              placeholder="Filter files..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-8 px-2 text-sm bg-muted/30 border border-border/50 rounded"
+            />
+          </div>
           <ScrollArea className="flex-1">
-            <div className="py-1">{tree.map((node: any) => renderNode(node))}</div>
+            <div className="py-1">{filteredTree.map((node: any) => renderNode(node))}</div>
           </ScrollArea>
         </aside>
 
-        {/* Center - Code viewer */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          {/* File info bar */}
-          <div className="border-b border-border/50 px-4 py-2 flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0">
-            <span>Lines {displayContent?.startLine || 1}-{displayContent?.endLine || displayLines.length}</span>
-            <Separator orientation="vertical" className="h-3" />
-            <span>{Math.ceil((displayContent?.content?.length || 0) / 4).toLocaleString()} tokens</span>
-            {selectedSymbol && (
-              <>
-                <Separator orientation="vertical" className="h-3" />
-                <span className="text-warning">Viewing: {selectedSymbol.name}</span>
-                <Button variant="ghost" size="sm" className="h-5 text-xs px-2" onClick={() => setSelectedSymbol(null)}>
-                  Show full file
+        {/* Main Content - Code Viewer */}
+        <main className="flex-1 flex flex-col">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border/50 bg-muted/30">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Search in file..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearchInFile()}
+                className="h-7 px-2 text-sm bg-background border border-border/50 rounded w-48"
+              />
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleSearchInFile}>
+                <Search className="h-3 w-3 mr-1" />
+                Find
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedLines.size > 0 && (
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={copySelectedLines}>
+                  <Copy className="h-3 w-3 mr-1" />
+                  Copy {selectedLines.size} lines
                 </Button>
-              </>
-            )}
+              )}
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedLines(new Set())}>
+                Clear
+              </Button>
+            </div>
           </div>
 
           {/* Code */}
           <ScrollArea className="flex-1">
             {loading ? (
-              <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-                Loading...
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : !file ? (
+              <div className="flex items-center justify-center py-20 text-muted-foreground">
+                <FileCode className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>File not found</p>
               </div>
             ) : (
-              <div className="px-4 py-3">
+              <div className="relative">
                 <div
-                  className="text-sm font-mono leading-6"
-                  style={{ color: "#e4e4e7" }}
-                  dangerouslySetInnerHTML={{
-                    __html: highlightedCode || displayLines
-                      .map((line, i) => `<div class="flex hover:bg-muted/30"><span class="w-12 text-right pr-4 text-muted-foreground select-none">${startLine + i}</span><span class="flex-1">${escapeHtml(line) || " "}</span></div>`)
-                      .join("")
+                  className="text-sm font-mono"
+                  dangerouslySetInnerHTML={{ __html: highlightedCode }}
+                  style={{
+                    paddingLeft: "60px",
                   }}
                 />
+                {/* Line numbers overlay */}
+                <div className="absolute top-0 left-0 w-14 text-right font-mono text-xs text-muted-foreground select-none bg-background">
+                  {lines.map((_, i) => {
+                    const lineNum = startLine + i;
+                    const isSelected = selectedLines.has(lineNum);
+                    return (
+                      <div
+                        key={i}
+                        data-line={lineNum}
+                        className={`pr-2 h-[20px] leading-[20px] cursor-pointer hover:bg-muted/50 transition-colors ${
+                          isSelected ? "bg-primary/20" : ""
+                        }`}
+                        onMouseDown={() => handleLineMouseDown(lineNum)}
+                        onClick={() => handleLineClick(lineNum)}
+                      >
+                        {lineNum}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </ScrollArea>
         </main>
 
-        {/* Right sidebar - Symbols */}
+        {/* Right sidebar - Line Info */}
         <aside className="w-56 border-l border-border/50 flex-shrink-0 flex flex-col">
-          <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between">
-            <span className="text-xs font-medium">Symbols ({symbols.length})</span>
-            {extracting && <Loader2 className="h-3 w-3 text-primary animate-spin" />}
+          <div className="p-3 border-b border-border/50">
+            <h3 className="text-xs font-medium">Selection</h3>
           </div>
-          <ScrollArea className="flex-1">
-            {extracting ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center px-4">
-                <Loader2 className="h-6 w-6 text-primary animate-spin mb-2" />
-                <p className="text-xs text-muted-foreground">Extracting with AI...</p>
-                <p className="text-[10px] text-muted-foreground/70 mt-1">This may take a moment</p>
-              </div>
-            ) : symbols.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center px-4">
-                <Sparkles className="h-7 w-7 text-muted-foreground/50 mb-2" />
-                <p className="text-xs text-muted-foreground">No symbols found</p>
-                <button
-                  onClick={extractSymbols}
-                  className="mt-2 text-xs text-primary hover:underline"
-                >
-                  Extract with AI
-                </button>
-              </div>
+          <div className="p-3 flex-1">
+            {selectedLines.size === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Click or drag to select lines. Selection shows token count.
+              </p>
             ) : (
-              <div className="py-1">
-                {Object.entries(symbolsByKind).map(([kind, syms]) => (
-                  <div key={kind}>
-                    <div className="px-3 py-1 text-xs text-muted-foreground/70 uppercase tracking-wide">
-                      {kind}s ({syms.length})
-                    </div>
-                    {syms.map((sym, i) => {
-                      const Icon = getKindIcon(sym.kind);
-                      return (
-                        <div
-                          key={i}
-                          className={`px-3 py-1.5 hover:bg-muted/50 text-sm flex items-center gap-2 ${
-                            selectedSymbol?.name === sym.name ? "bg-muted/70" : ""
-                          }`}
-                        >
-                          <div
-                            className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
-                            onClick={() => selectSymbol(sym)}
-                          >
-                            <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${getKindColor(sym.kind)}`} />
-                            <span className="flex-1 truncate text-muted-foreground">{sym.name}</span>
-                            <span className="text-[10px] text-muted-foreground/70">{sym.tokenCount}t</span>
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              copyApiUrl(sym);
-                            }}
-                            className="flex-shrink-0 p-1 hover:bg-muted rounded group/copy"
-                            title="Copy API URL for LLM"
-                          >
-                            {copiedApi === sym.name ? (
-                              <Check className="h-3 w-3 text-success" />
-                            ) : (
-                              <ExternalLink className="h-3 w-3 text-muted-foreground group-hover/copy:text-foreground" />
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
+              <div className="space-y-2">
+                <div className="text-xs">
+                  <span className="font-medium">{selectedLines.size} lines selected</span>
+                </div>
+                {selectedLines.size > 1 && (
+                  <div className="text-xs text-muted-foreground">
+                    Lines {Math.min(...selectedLines)} - {Math.max(...selectedLines)}
                   </div>
-                ))}
+                )}
+                <div className="text-xs text-muted-foreground">
+                  ~{Math.round(selectedLines.size * 4)} tokens
+                </div>
+                <Button variant="outline" size="sm" className="w-full text-xs mt-2" onClick={copySelectedLines}>
+                  <Copy className="h-3 w-3 mr-1" />
+                  Copy
+                </Button>
               </div>
             )}
-          </ScrollArea>
+          </div>
+
+          {/* File Stats */}
+          <div className="p-3 border-t border-border/50">
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total lines</span>
+                <span>{file?.lineCount || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total tokens</span>
+                <span>{file?.tokenCount || 0}</span>
+              </div>
+              <Separator className="my-2" />
+              <div className="text-xs text-muted-foreground">
+                Jump to line:{" "}
+                <input
+                  type="number"
+                  min={1}
+                  max={file?.lineCount}
+                  className="w-16 px-1 py-0.5 bg-background border border-border/50 rounded text-center"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const target = parseInt((e.target as HTMLInputElement).value);
+                      if (target >= 1 && target <= (file?.lineCount || 0)) {
+                        const element = document.querySelector(`[data-line="${target}"]`);
+                        if (element) {
+                          element.scrollIntoView({ behavior: "smooth", block: "center" });
+                          element.classList.add("bg-primary/20");
+                          setTimeout(() => element.classList.remove("bg-primary/20"), 2000);
+                        }
+                      }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         </aside>
       </div>
     </div>

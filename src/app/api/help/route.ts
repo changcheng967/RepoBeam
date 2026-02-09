@@ -6,185 +6,161 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const help = `
 ================================================================================
-Repobeam API - LLM-Friendly Code Access Platform
+Luminex Code API - LLM-Friendly Code Access
 ================================================================================
 
-REPOBEAM IS NOW OPEN FOR PUBLIC USE! Add any GitHub repository.
+This API provides line-based code access for the Luminex ML inference framework.
+All responses include token counts and line numbers for efficient navigation.
 
-Authentication: Add "Authorization: Bearer <API_KEY>" header to all requests.
-Get your API key by signing up at Repobeam or host your own instance.
+Authentication: Add "Authorization: Bearer <API_KEY>" header
 
 ================================================================================
 QUICK START FOR LLMS
 ================================================================================
 
-1. ADD A REPO:
-   POST /api/repos
-   Body: {"owner": "changcheng967", "name": "Luminex"}
-   Response: Repo metadata with initial sync status
-
-2. GET FILE CONTENT:
+1. GET FILE CONTENT:
    GET /api/file?repo=changcheng967/Luminex&path=src/evaluation.cpp
-   Response: File content with line numbers and metadata
-   Auto-truncates at 8000 tokens - see "hints" for getting more
+   Response: Full file content with line numbers and token count
 
-3. LIST SYMBOLS:
-   GET /api/symbols?repo=changcheng967/Luminex&path=src/evaluation.cpp
-   Response: All functions, classes, structs with line ranges and token counts
-
-4. GET SINGLE FUNCTION:
-   GET /api/function?repo=changcheng967/Luminex&path=src/evaluation.cpp&name=evaluate_pawn_shield
-   Response: Just that function's code with metadata
-
-5. SEARCH CODE:
+2. SEARCH CODE:
    GET /api/search?repo=changcheng967/Luminex&q=evaluate
-   Response: Matching files with line snippets (5 lines context)
+   Response: Matching files with line snippets and context
+
+3. GET FILE TREE:
+   GET /api/tree?repo=changcheng967/Luminex
+   Response: Complete file tree with token counts
+
+4. GET LINE RANGE:
+   GET /api/file?repo=changcheng967/Luminex&path=src/evaluation.cpp&startLine=100&endLine=150
+   Response: Lines 100-150 only (token-efficient)
+
+5. FULL-TEXT SEARCH:
+   GET /api/search?repo=changcheng967/Luminex&q=king_danger_zone&filePattern=*.cpp
+   Response: All matches with line context
 
 ================================================================================
 CORE ENDPOINTS
 ================================================================================
 
-REPOSITORY MANAGEMENT
----------------------
+FILE ACCESS
+-----------
 
-POST /api/repos
-  Description: Add a GitHub repository to index
-  Body: {"owner": string, "name": string}
-  Response: {"data": {"id": number, "full_name": string, "status": "syncing"}}
-  Note: Triggers background sync - use GET /api/sync to check progress
-
-GET /api/repos
-  Description: List all indexed repositories
-  Response: Array of repo objects with stats (file count, last synced)
-
-DELETE /api/repos/{id}
-  Description: Remove a repository and all its data
-
-POST /api/repos/{id}/sync
-  Description: Trigger manual re-sync
-  Query: ?force=true to re-index all files
-
-GET /api/sync?repo=owner/name
-  Description: Get sync status
-  Response: Sync progress, file counts, errors
-
-
-FILE BROWSING
--------------
-
-GET /api/tree?repo=owner/name
-  Description: Get complete file tree
-  Response: {"data": {"files": [{"path": string, "sha": string, "size": number}]}}
-  Includes: All files with SHAs for change detection
-
-GET /api/file?repo=owner/name&path=...
-  Description: Get file content
-  Query Params:
+GET /api/file
+  Description: Get file content with line-based navigation
+  Query Parameters:
+    - repo: "changcheng967/Luminex" (required)
     - path: File path (required)
     - startLine: Start at line N (1-indexed)
     - endLine: End at line N
-    - maxTokens: Override default 8000 token limit
+    - maxTokens: Override default token limit
     - raw: Return plain text instead of JSON
   Response:
-    {"data": {
-      "content": string,
-      "language": string,
-      "lineCount": number,
-      "startLine": number,
-      "endLine": number,
-      "path": string
-    }}
-  Truncation: If content exceeds maxTokens, response includes:
-    {"_meta": {"truncated": true, "hint": "Add ?startLine=801&endLine=1600"}}
+    {
+      "data": {
+        "content": "full file content",
+        "language": "cpp",
+        "lineCount": 1699,
+        "tokenCount": 67752,
+        "path": "src/evaluation.cpp"
+      }
+    }
+
+  Examples:
+    - Get entire file: ?repo=changcheng967/Luminex&path=src/evaluation.cpp
+    - Get lines 100-200: ?repo=...&path=...&startLine=100&endLine=200
+    - Get as plain text: ?repo=...&path=...&raw=true
 
 
-SYMBOL NAVIGATION (THE KILLER FEATURE)
-----------------------------------------
-
-GET /api/symbols?repo=owner/name&path=...
-  Description: List all symbols in a file
+GET /api/tree
+  Description: Get complete file tree
+  Query Parameters:
+    - repo: "changcheng967/Luminex" (required)
   Response:
-    {"data": [
-      {"name": "function_name", "kind": "function", "startLine": 10, "endLine": 50,
-       "tokenCount": 123, "signature": "void function_name(int x)"},
-      ...
-    ]}
-  Kinds: function, class, struct, interface, type, enum, method
-
-GET /api/function?repo=owner/name&path=...&name=...
-  Description: Get a single symbol's code
-  Query Params:
-    - path: File path
-    - name: Symbol name
-    - context: Add 5 lines before/after (true/false)
-  Response: Just that symbol's code with metadata
-
-GET /api/symbols/search?repo=owner/name&q=...
-  Description: Fuzzy search for symbols across all files
-  Query Params:
-    - q: Search query (symbol name)
-    - kind: Filter by kind (optional)
-  Response: Matching symbols with file paths and line ranges
-
-GET /api/symbols/extract?repo=owner/name&path=...
-  Description: Extract symbols for a file (runs LLM if not cached)
-  Method: POST
-  Response: Extracted symbols
+    {
+      "data": {
+        "files": [
+          {"path": "src/evaluation.cpp", "sha": "abc123", "size": 12345},
+          ...
+        ]
+      }
+    }
 
 
 SEARCH
 ------
 
-GET /api/search?repo=owner/name&q=...
-  Description: Full-text code search with snippets
-  Query Params:
-    - q: Search query
-    - filePattern: Filter by file pattern (e.g., "*.cpp")
+GET /api/search
+  Description: Full-text code search with line context
+  Query Parameters:
+    - repo: "changcheng967/Luminex" (required)
+    - q: Search query (required)
+    - filePattern: Filter by file pattern (optional)
     - maxResults: Limit results (default 50)
   Response:
-    {"data": [
-      {"file": "src/file.cpp", "line": 42, "snippet": "..."},
-      ...
-    ]}
+    {
+      "data": [
+        {"path": "src/evaluation.cpp", "line": 148, "snippet": "int evaluate() { ... }"},
+        ...
+      ]
+    }
 
-GET /api/search/regex?repo=owner/name&q=...
-  Description: Regex search (pattern must be URL-encoded)
-  Query Params:
-    - q: Regex pattern
+  Example: Search for "evaluate_pawn_shield"
+    GET /api/search?repo=changcheng967/Luminex&q=evaluate_pawn_shield
+
+
+GET /api/search/regex
+  Description: Regex search
+  Query Parameters:
+    - repo: "changcheng967/Luminex" (required)
+    - q: Regex pattern (URL-encoded)
     - filePattern: Filter by file pattern (optional)
+  Response: Matching lines with file paths
 
 
-ADVANCED FEATURES
------------------
+REPOSITORY
+----------
 
-GET /api/context?repo=owner/name&path=...&name=...
-  Description: Smart context - function + called functions + referenced types
-  Budget: 10,000 tokens, prioritizes by relevance
-  Response: Multiple code blocks with context labels
+GET /api/sync
+  Description: Get repository sync status
+  Query Parameters:
+    - repo: "changcheng967/Luminex"
+  Response:
+    {
+      "data": {
+        "currentlySyncing": false,
+        "filesIndexed": 16,
+        "repo": {
+          "last_synced_at": "2025-02-09T12:00:00Z",
+          "last_sha": "abc123"
+        }
+      }
+    }
 
-GET /api/outline?repo=owner/name&path=...
-  Description: Get file structure without content
-  Response: Symbol hierarchy with nesting
-
-GET /api/dependencies?repo=owner/name&path=...
-  Description: Get file imports/dependencies
-  Response: List of imported files/modules
-
-GET /api/references?repo=owner/name&path=...&symbol=...
-  Description: Find where a symbol is used (NEW!)
-  Response: Files and line numbers where symbol is referenced
+POST /api/sync
+  Description: Trigger repository sync
+  Query Parameters:
+    - repo: "changcheng967/Luminex"
+    - force: true to re-index all files
+  Method: POST
 
 
-DIFF & CHANGE TRACKING
-----------------------
-
-GET /api/diff?repo=owner/name&since=sha
-  Description: Get changed files since a commit
-  Response: List of changed files with change type (added/modified/deleted)
-
-GET /api/diff/function?repo=owner/name&path=...&name=...&since=sha
-  Description: Before/after of a specific function
-  Response: Old and new versions of the function
+GET /api/stats
+  Description: Get repository statistics
+  Query Parameters:
+    - repo: "changcheng967/Luminex"
+  Response:
+    {
+      "data": {
+        "repository": {...},
+        "overview": {
+          "totalFiles": 16,
+          "totalLines": 12345,
+          "totalTokens": 67890
+        },
+        "byLanguage": {...},
+        "largestFiles": [...]
+      }
+    }
 
 
 ================================================================================
@@ -195,76 +171,100 @@ All JSON responses follow this envelope:
 
 {
   "_meta": {
-    "total_tokens": number,
-    "truncated": boolean,
-    "hint": string (only if truncated)
+    "total_tokens": 1234,
+    "truncated": false
   },
-  "data": actual_response_data
+  "data": { ... }
 }
 
 Token estimation: Math.ceil(text.length / 4)
 
-Raw text responses: Add ?raw=true to any endpoint
-
+For large files (>8000 tokens), responses are truncated with:
+  "_meta.truncated": true
+  "_meta.hint": "Use ?startLine=X&endLine=Y to fetch more"
 
 ================================================================================
-INTEGRATION GUIDE FOR LLMS
+LLM INTEGRATION GUIDE
 ================================================================================
 
 RECOMMENDED WORKFLOW:
---------------------
+----------------------
 
-1. User mentions a repository:
-   -> POST /api/repos to add it
-   -> Poll GET /api/sync?repo=owner/name until synced=true
+1. User asks about a file:
+   GET /api/file?repo=changcheng967/Luminex&path=src/evaluation.cpp
 
-2. User asks about a file:
-   -> GET /api/symbols?repo=owner/name&path=...
-   -> Show symbol list with line ranges and token counts
-   -> User picks symbol -> GET /api/function with symbol name
+   If truncated:
+   GET /api/file?repo=...&path=...&startLine=801&endLine=1200
 
-3. User searches for code:
-   -> GET /api/search?repo=owner/name&q=query
-   -> Show results with snippets
-   -> User picks result -> GET /api/file for full context
+2. User asks about a function:
+   GET /api/search?repo=changcheng967/Luminex&q=function_name
 
-4. Symbol usage questions:
-   -> GET /api/references?repo=...&symbol=name
-   -> Show all usages across files
+   Then get the file and jump to the line:
+   GET /api/file?repo=...&path=...&startLine=X&endLine=Y
 
-5. Understanding code structure:
-   -> GET /api/outline?repo=...&path=...
-   -> Show file structure without fetching full content
+3. User asks about code patterns:
+   GET /api/search/regex?repo=changcheng967/Luminex&q=class\\s+\\w+
 
 TOKEN BUDGET MANAGEMENT:
 ------------------------
 
 - Always check _meta.total_tokens before processing
-- If truncated=true, use the hint to fetch remaining content
-- Use /api/function instead of /api/file for large files
-- Use /api/context for smart multi-file context
+- For large files, request specific line ranges
+- Use search to find relevant files first
+- Then fetch targeted line ranges
 
 
 EXAMPLE CONVERSATION FLOW:
 --------------------------
 
-User: "What does the evaluate_pawn_shield function do?"
+User: "Show me the evaluate_pawn_shield function"
 
 LLM Steps:
-1. GET /api/symbols/search?repo=changcheng967/Luminex&q=evaluate_pawn_shield
-   -> Found in src/evaluation.cpp, lines 823-915, 148 tokens
-2. GET /api/function?repo=...&path=src/evaluation.cpp&name=evaluate_pawn_shield
-   -> Got function code
+1. GET /api/search?repo=changcheng967/Luminex&q=evaluate_pawn_shield
+   -> Found in src/evaluation.cpp, line 823
+
+2. GET /api/file?repo=...&path=src/evaluation.cpp&startLine=820&endLine=920
+   -> Got function with context
+
 3. Explain the function
 
 
-User: "Where is Evaluation class used?"
+User: "How does the king danger zone evaluation work?"
 
 LLM Steps:
-1. GET /api/references?repo=...&symbol=Evaluation
-   -> Found in 12 files
-2. GET /api/symbols for each file to get context
-3. Explain usage patterns
+1. GET /api/search?repo=changcheng967/Luminex&q=king_danger_zone
+   -> Found in src/evaluation.cpp, line 148
+
+2. GET /api/file?repo=...&path=src/evaluation.cpp&startLine=145&endLine=180
+   -> Got function implementation
+
+3. Explain the logic
+
+
+================================================================================
+LINE-BASED NAVIGATION
+================================================================================
+
+The API is optimized for line-based code access. Instead of symbols,
+use line numbers to navigate code:
+
+1. Search finds the exact line number
+2. Request line ranges around the target
+3. Always include context lines (±5-10)
+
+Example pattern:
+- Search finds: line 823
+- Request: startLine=815, endLine=835 (5 lines before, 12 after)
+- This gives you the function plus surrounding context
+
+
+JUMP TO LINE:
+-----------
+
+When linking to code, use URL fragments:
+  /repo/changcheng967/Luminex/src/evaluation.cpp#150
+
+This scrolls to and highlights line 150 in the web viewer.
 
 
 ================================================================================
@@ -276,49 +276,30 @@ All errors return JSON:
 
 Common errors:
 - 401: Missing or invalid API key
-- 404: Repository or file not found
-- 400: Invalid parameters (check error message)
-- 429: Rate limited (add delay between requests)
-- 500: Server error (try again or contact support)
+- 404: File not found
+- 400: Invalid parameters
+- 500: Server error
 
-For truncation:
-- Check _meta.truncated
-- Use _meta.hint for next request
+Check the error message for specific guidance.
 
 
 ================================================================================
-RATE LIMITS & BEST PRACTICES
+RATE LIMITS
 ================================================================================
 
-- Symbol extraction is cached - subsequent requests are instant
-- Use symbol endpoints before fetching full files
-- Batch requests when possible
-- Respect rate limits - add 100ms delay between requests
-- Use ?raw=true for direct text when not parsing JSON
-
-
-================================================================================
-HOST YOUR OWN
-================================================================================
-
-Repobeam is open source! Host your own instance:
-
-1. Clone: https://github.com/your-org/repobeam
-2. Set env vars: SUPABASE_URL, SUPABASE_KEY, GITHUB_TOKEN, NIM_API_KEY
-3. Deploy to Vercel/Railway/etc
-
-Full setup guide: https://github.com/your-org/repobeam#setup
+- No rate limiting for personal use
+- Line range requests are very fast
+- File tree is cached
+- Only changed files are re-synced (SHA-based)
 
 
 ================================================================================
-VERSION & SUPPORT
+VERSION
 ================================================================================
 
 API Version: v1
+Repository: Luminex - High-performance ML inference framework
 Last Updated: 2025-02
-Documentation: https://docs.repobeam.com
-Support: support@repobeam.com
-GitHub: https://github.com/your-org/repobeam
 
 ================================================================================
 `;
