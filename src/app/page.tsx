@@ -101,29 +101,30 @@ export default function HomePage() {
     }
   }, []);
 
-  // Initial load and polling
+  // Initial load
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
       await Promise.all([fetchStats(true), fetchFullStats()]);
+      setLoading(false);
     };
     loadAll();
-  }, [fetchStats, fetchFullStats]);
+  }, []); // Empty deps = run once on mount
 
   // Poll when syncing or after sync attempt
   useEffect(() => {
+    if (!stats.syncing && syncAttempt === 0) return; // Skip if not syncing
+
     const interval = setInterval(() => {
-      if (stats.syncing || syncAttempt > 0) {
-        fetchStats(false);
-        if (!stats.syncing && syncAttempt > 0) {
-          // Sync completed, fetch full stats
-          fetchFullStats();
-          setSyncAttempt(0);
-        }
+      fetchStats(false);
+      fetchFullStats();
+      if (!stats.syncing && syncAttempt > 0) {
+        // Sync completed
+        setSyncAttempt(0);
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [fetchStats, fetchFullStats, stats.syncing, syncAttempt]);
+  }, [stats.syncing, syncAttempt, fetchStats, fetchFullStats]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
