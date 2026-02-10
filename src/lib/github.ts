@@ -96,4 +96,32 @@ export async function getCommitFiles(owner: string, name: string, sha: string) {
   return data.files?.map(f => f.filename) || [];
 }
 
+// Get a single file's metadata (SHA) without fetching entire tree
+// This is much faster than getTree() for webhook sync
+export async function getFileMetadata(owner: string, name: string, path: string, branch = 'main') {
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner,
+      repo: name,
+      path,
+      ref: branch,
+    });
+
+    if ('sha' in data) {
+      return {
+        sha: data.sha as string,
+        size: data.size || 0,
+      };
+    }
+    throw new Error('Not a file');
+  } catch (error) {
+    // File might have been deleted
+    console.error(`Failed to get metadata for ${path}:`, error);
+    return {
+      sha: '',
+      size: 0,
+    };
+  }
+}
+
 export default octokit;

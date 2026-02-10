@@ -1,5 +1,5 @@
 import { supabase, estimateTokens } from './supabase';
-import { getRepo, getTree, getFileContent, getLatestCommit } from './github';
+import { getRepo, getTree, getFileContent, getLatestCommit, getFileMetadata } from './github';
 import { detectLanguage, countLines } from './parser';
 
 // Supported source code extensions for indexing
@@ -16,7 +16,7 @@ function shouldIndex(path: string): boolean {
   return SOURCE_EXTENSIONS.includes(ext);
 }
 
-// Sync a repository
+// Sync a repository (full sync)
 export async function syncRepo(owner: string, name: string, force = false): Promise<void> {
   try {
     // Check GitHub token
@@ -144,21 +144,32 @@ async function indexFile(repoId: number, owner: string, name: string, path: stri
   console.log(`[sync] Indexed ${path} (${lineCount} lines, ${tokenCount} tokens)`);
 }
 
-// Sync specific files (for webhook)
+// Sync specific files (for webhook) - FAST version, doesn't fetch whole tree
 export async function syncFiles(repoId: number, owner: string, name: string, paths: string[]): Promise<void> {
-  // Get tree for SHA lookup
-  const tree = await getTree(owner, name);
-  const treeMap = new Map(tree.map(item => [item.path, item.sha]));
+  console.log(`[webhook sync] Starting for ${paths.length} files`);
 
   let filesUpdated = 0;
   for (const path of paths) {
-    if (!shouldIndex(path)) continue;
-    const sha = treeMap.get(path) || '';
+    if (!shouldIndex(path)) {
+      console.log(`[webhook sync] Skipping ${path} (not a source file)`);
+      continue;
+    }
+
     try {
+      // Get file metadata (SHA) directly - MUCH faster than fetching whole tree
+      const { sha } = await getFileMetadata(owner, name, path);
+
+      if (!sha) {
+        console.log(`[webhook sync] File ${path} not found (deleted?)`);
+        // Delete from database if it exists
+        await supabase.from('files').delete().eq('repo_id', repoId).eq('path', path);
+        continue;
+      }
+
       await indexFile(repoId, owner, name, path, sha, false);
       filesUpdated++;
     } catch (error) {
-      console.error(`Failed to sync ${path}:`, error);
+      console.error(`[webhook sync] Failed to sync ${path}:`, error);
     }
   }
 
@@ -172,5 +183,5 @@ export async function syncFiles(repoId: number, owner: string, name: string, pat
     })
     .eq('id', repoId);
 
-  console.log(`[sync] Webhook sync complete: ${filesUpdated} files updated, SHA updated to ${latestSha}`);
+  console.log(`[webhook sync] Complete: ${filesUpdated} files updated, SHA updated to ${latestSha}`);
 }
