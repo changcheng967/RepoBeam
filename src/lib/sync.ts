@@ -150,19 +150,27 @@ export async function syncFiles(repoId: number, owner: string, name: string, pat
   const tree = await getTree(owner, name);
   const treeMap = new Map(tree.map(item => [item.path, item.sha]));
 
+  let filesUpdated = 0;
   for (const path of paths) {
     if (!shouldIndex(path)) continue;
     const sha = treeMap.get(path) || '';
     try {
       await indexFile(repoId, owner, name, path, sha, false);
+      filesUpdated++;
     } catch (error) {
       console.error(`Failed to sync ${path}:`, error);
     }
   }
 
-  // Update repo sync time
+  // Update repo sync time AND last_sha to prevent unnecessary full resync
+  const latestSha = await getLatestCommit(owner, name);
   await supabase
     .from('repos')
-    .update({ last_synced_at: new Date().toISOString() })
+    .update({
+      last_synced_at: new Date().toISOString(),
+      last_sha: latestSha,
+    })
     .eq('id', repoId);
+
+  console.log(`[sync] Webhook sync complete: ${filesUpdated} files updated, SHA updated to ${latestSha}`);
 }

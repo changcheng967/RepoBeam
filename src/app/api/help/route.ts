@@ -6,14 +6,15 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const help = `
 ================================================================================
-Luminex Code API - LLM-Friendly Code Access
+Luminex Code API v2 - LLM-Friendly Code Access
 ================================================================================
 
 This API provides line-based code access for the Luminex ML inference framework.
 All endpoints are PUBLIC - no authentication required.
 Designed for LLMs that can only access content via URL/fetch.
 
-All responses include token counts and line numbers for efficient navigation.
+API Version: v2.0
+All responses include token counts, line numbers, and enhanced metadata.
 
 ================================================================================
 QUICK START FOR LLMS
@@ -25,9 +26,9 @@ IMPORTANT: No API key needed! All endpoints are publicly accessible.
    GET /api/file?repo=changcheng967/Luminex&path=src/evaluation.cpp
    Response: Full file content with line numbers and token count
 
-2. SEARCH CODE:
-   GET /api/search?repo=changcheng967/Luminex&q=evaluate
-   Response: Matching files with line snippets and context
+2. SEARCH CODE (ENHANCED):
+   GET /api/search?repo=changcheng967/Luminex&q=evaluate&contextLines=10
+   Response: Matching files with configurable context and match count
 
 3. GET FILE TREE:
    GET /api/tree?repo=changcheng967/Luminex
@@ -37,13 +38,84 @@ IMPORTANT: No API key needed! All endpoints are publicly accessible.
    GET /api/file?repo=changcheng967/Luminex&path=src/evaluation.cpp&startLine=100&endLine=150
    Response: Lines 100-150 only (saves tokens!)
 
-5. GET RAW CODE (Plain Text):
+5. BATCH REQUESTS (NEW):
+   GET /api/v2/batch?repo=changcheng967/Luminex&paths=file1.cpp,file2.h,file3.cpp
+   Response: Multiple files in one request
+
+6. GET STATS (ENHANCED):
+   GET /api/stats?repo=changcheng967/Luminex
+   Response: Repository overview with file distribution and directories
+
+7. GET RAW CODE (Plain Text):
    GET /api/file?repo=changcheng967/Luminex&path=src/evaluation.cpp&raw=true
    Response: Plain text code (no JSON wrapper)
 
-6. GET STATS:
-   GET /api/stats?repo=changcheng967/Luminex
-   Response: Repository overview with file counts, sizes
+================================================================================
+V2 NEW FEATURES
+================================================================================
+
+BATCH ENDPOINT
+--------------
+GET/POST /api/v2/batch
+  Description: Get multiple files in a single request
+  Use case: When you need content from multiple files efficiently
+  Max files: 20 per batch
+  Token budget: Respects maxTokens parameter (default 8000)
+
+  GET Example:
+    /api/v2/batch?repo=changcheng967/Luminex&paths=src/eval.cpp,src/search.cpp
+
+  POST Example (for line ranges):
+    Body: {
+      "repo": "changcheng967/Luminex",
+      "requests": [
+        {"path": "src/eval.cpp", "startLine": 1, "endLine": 100},
+        {"path": "src/search.cpp", "startLine": 50, "endLine": 150}
+      ],
+      "maxTokens": 10000
+    }
+
+ENHANCED SEARCH
+---------------
+GET /api/search (v2 enhancements)
+  New Parameters:
+    - contextLines: Number of context lines (default: 5)
+    - highlight: "true" wraps matches in >>>match<<<
+    - maxResults: Maximum results (default: 50)
+
+  Examples:
+    - Search with more context:
+      /api/search?repo=...&q=Bitboard&contextLines=10
+
+    - Search with highlighted matches:
+      /api/search?repo=...&q=evaluate&highlight=true
+
+    - Search in C++ files only:
+      /api/search?repo=...&q=class&filePattern=*.cpp
+
+ENHANCED STATS
+--------------
+GET /api/stats (v2 enhancements)
+  New Fields:
+    - avgLinesPerFile: Average lines per file
+    - avgTokensPerFile: Average tokens per file
+    - sizeDistribution: File count by size (tiny, small, medium, large, huge)
+    - directories: Top-level directory breakdown
+    - byLanguage[].percentage: Percentage of files per language
+
+  New Parameter:
+    - verbose: "true" returns all 20 largest files and full file list
+
+  Example:
+    /api/stats?repo=changcheng967/Luminex&verbose=true
+
+IMPROVED SYNC
+-------------
+GET /api/sync (v2 enhancements)
+  - Always returns fresh data from database
+  - Accurate lastSyncedAt timestamp
+  - Real-time file count
+  - Proper sync status tracking
 
 ================================================================================
 CORE ENDPOINTS
@@ -114,15 +186,15 @@ GET /api/tree
         ],
         "repo": {
           "name": "changcheng967/Luminex",
-          "lastSyncedAt": "2025-02-09T12:00:00Z",
+          "lastSyncedAt": "2025-02-10T12:00:00Z",
           "fileCount": 42
         }
       }
     }
 
 
-SEARCH
-------
+SEARCH (V2 ENHANCED)
+--------------------
 
 GET /api/search
   Description: Full-text code search with line context
@@ -131,30 +203,42 @@ GET /api/search
     - repo: "changcheng967/Luminex" (required)
     - q: Search query (required) - case-insensitive substring match
     - filePattern: Filter by file pattern, e.g., "*.cpp" (optional)
-    - maxResults: Limit results (default: 20)
+    - contextLines: Lines of context around match (default: 5)
+    - highlight: "true" wraps matches in >>>match<<< (optional)
+    - maxResults: Limit results (default: 50)
 
   Response:
     {
       "_meta": { "total_tokens": 234 },
-      "data": [
-        {
-          "path": "src/evaluation.cpp",
-          "line": 148,
-          "snippet": "int king_danger_zone(Square s, const Bitboard& occupied) {..."
-        },
-        ...
-      ]
+      "data": {
+        "query": "evaluate",
+        "contextLines": 5,
+        "resultCount": 3,
+        "results": [
+          {
+            "path": "src/evaluation.cpp",
+            "line": 148,
+            "snippet": "...",
+            "contextBefore": 5,
+            "contextAfter": 5,
+            "matchCount": 2
+          }
+        ]
+      }
     }
 
   Examples:
     - Search for function name:
       /api/search?repo=changcheng967/Luminex&q=evaluate_pawn_shield
 
-    - Search in C++ files only:
-      /api/search?repo=changcheng967/Luminex&q=Bitboard&filePattern=*.cpp
+    - Search with more context:
+      /api/search?repo=changcheng967/Luminex&q=Bitboard&contextLines=10
 
-    - Search for variable:
-      /api/search?repo=changcheng967/Luminex&q=PST[PIECE_TYPE]
+    - Search with highlighted matches:
+      /api/search?repo=changcheng967/Luminex&q=evaluate&highlight=true
+
+    - Search in C++ files only:
+      /api/search?repo=changcheng967/Luminex&q=class&filePattern=*.cpp
 
 
 GET /api/search/regex
@@ -173,14 +257,15 @@ GET /api/search/regex
       /api/search/regex?repo=changcheng967/Luminex&q=^\\s*\\w+\\s+\\w+\\s*\\([^)]*\\)\\s*\\{
 
 
-STATISTICS
-----------
+STATISTICS (V2 ENHANCED)
+------------------------
 
 GET /api/stats
   Description: Repository statistics and overview
   Auth: NONE - Public endpoint
   Query Parameters:
     - repo: "changcheng967/Luminex" (required)
+    - verbose: "true" for full file list (optional)
 
   Response:
     {
@@ -190,28 +275,44 @@ GET /api/stats
           "name": "changcheng967/Luminex",
           "description": "High-performance ML inference framework",
           "language": "C++",
-          "lastSyncedAt": "2025-02-09T12:00:00Z"
+          "lastSyncedAt": "2025-02-10T12:00:00Z",
+          "lastSha": "abc123"
         },
         "overview": {
           "totalFiles": 42,
           "totalLines": 15678,
-          "totalTokens": 62712
+          "totalTokens": 62712,
+          "avgLinesPerFile": 373,
+          "avgTokensPerFile": 1493
         },
         "byLanguage": {
-          "cpp": { "files": 28, "lines": 12345, "tokens": 49380 },
-          "h": { "files": 10, "lines": 2345, "tokens": 9380 },
-          "py": { "files": 4, "lines": 988, "tokens": 3952 }
+          "cpp": { "files": 28, "lines": 12345, "tokens": 49380, "percentage": 67 },
+          "h": { "files": 10, "lines": 2345, "tokens": 9380, "percentage": 24 }
+        },
+        "sizeDistribution": {
+          "tiny": 5,    // < 100 lines
+          "small": 20,  // 100-500 lines
+          "medium": 10, // 500-1000 lines
+          "large": 5,   // 1000-5000 lines
+          "huge": 2     // > 5000 lines
+        },
+        "directories": {
+          "src": { "files": 30, "tokens": 50000 },
+          "include": { "files": 10, "tokens": 5000 },
+          "tests": { "files": 2, "tokens": 1000 }
         },
         "largestFiles": [
-          { "path": "src/evaluation.cpp", "lines": 1699, "tokens": 67752 },
-          ...
+          { "path": "src/evaluation.cpp", "lines": 1699, "tokens": 67752, "language": "cpp" }
         ]
       }
     }
 
 
+SYNC STATUS
+-----------
+
 GET /api/sync
-  Description: Repository sync status
+  Description: Repository sync status (v2: always fresh data)
   Auth: NONE - Public endpoint
   Query Parameters:
     - repo: "changcheng967/Luminex" (required)
@@ -220,14 +321,71 @@ GET /api/sync
     {
       "_meta": { "total_tokens": 123 },
       "data": {
-        "currentlySyncing": false,
+        "repo": "changcheng967/Luminex",
+        "lastSyncedAt": "2025-02-10T12:00:00Z",
+        "lastSha": "abc123def456",
         "filesIndexed": 42,
-        "repo": {
-          "last_synced_at": "2025-02-09T12:00:00Z",
-          "last_sha": "abc123def456"
-        }
+        "currentlySyncing": false,
+        "syncStartedAt": null,
+        "syncError": null
       }
     }
+
+
+================================================================================
+BATCH API (NEW)
+================================================================================
+
+POST /api/v2/batch
+  Description: Get multiple files/snippets in one request
+  Auth: NONE - Public endpoint
+
+  Request Body:
+    {
+      "repo": "changcheng967/Luminex",
+      "requests": [
+        {"path": "src/file1.cpp", "startLine": 1, "endLine": 50},
+        {"path": "src/file2.cpp", "startLine": 100, "endLine": 200},
+        {"path": "include/header.h"}
+      ],
+      "maxTokens": 10000
+    }
+
+  Response:
+    {
+      "_meta": {"total_tokens": 3456},
+      "data": {
+        "results": [
+          {
+            "path": "src/file1.cpp",
+            "content": "// file content...",
+            "language": "cpp",
+            "lineCount": 50,
+            "startLine": 1,
+            "endLine": 50
+          },
+          ...
+        ],
+        "totalTokens": 3200,
+        "skipped": 0
+      }
+    }
+
+  Use Cases:
+    - Fetch multiple related files in one request
+    - Compare implementations across files
+    - Get context from multiple modules
+    - Reduce round-trips for multi-file analysis
+
+GET /api/v2/batch
+  Description: Simplified batch for full files
+  Query Parameters:
+    - repo: "changcheng967/Luminex" (required)
+    - paths: Comma-separated file paths (required)
+    - maxTokens: Token budget (default: 8000)
+
+  Example:
+    /api/v2/batch?repo=changcheng967/Luminex&paths=src/eval.cpp,src/search.cpp,include/eval.h
 
 
 ================================================================================
@@ -262,18 +420,23 @@ RECOMMENDED WORKFLOW:
 ----------------------
 
 1. EXPLORATION - User asks about a topic:
-   GET /api/search?repo=changcheng967/Luminex&q=search_term
-   -> Returns matching files with line numbers
+   GET /api/search?repo=changcheng967/Luminex&q=search_term&contextLines=10
+   -> Returns matching files with line numbers and rich context
 
 2. TARGETED FETCH - Get specific code:
    GET /api/file?repo=...&path=...&startLine=X&endLine=Y
    -> Returns only the requested lines (token efficient)
 
-3. FULL CONTEXT (if needed):
+3. BATCH REQUEST - Get multiple related files:
+   POST /api/v2/batch
+   Body: {"repo": "...", "requests": [...]}
+   -> Multiple files in one request
+
+4. FULL CONTEXT (if needed):
    GET /api/file?repo=...&path=...&startLine=1&endLine=100
    -> Get beginning of file for includes/imports
 
-4. BROWSE STRUCTURE:
+5. BROWSE STRUCTURE:
    GET /api/tree?repo=changcheng967/Luminex
    -> See all files with sizes
 
@@ -286,6 +449,7 @@ TOKEN BUDGET MANAGEMENT:
 - Use search to find relevant files first
 - Then fetch targeted line ranges (±10 lines for context)
 - Use ?raw=true to save JSON wrapper tokens
+- Use /api/v2/batch for multiple files to save round-trips
 
 
 EXAMPLE CONVERSATION FLOWS:
@@ -294,7 +458,7 @@ EXAMPLE CONVERSATION FLOWS:
 User: "Show me the evaluate_pawn_shield function"
 
 LLM Steps:
-1. GET /api/search?repo=changcheng967/Luminex&q=evaluate_pawn_shield
+1. GET /api/search?repo=changcheng967/Luminex&q=evaluate_pawn_shield&contextLines=10
    Response: Found in src/evaluation.cpp, line 823
 
 2. GET /api/file?repo=changcheng967/Luminex&path=src/evaluation.cpp&startLine=815&endLine=875
@@ -304,36 +468,35 @@ LLM Steps:
 
 ---
 
-User: "How does the king danger zone evaluation work?"
+User: "Compare the Bitboard implementations in different files"
 
 LLM Steps:
-1. GET /api/search?repo=changcheng967/Luminex&q=king_danger_zone
-   Response: Found in src/evaluation.cpp, line 148
+1. GET /api/search?repo=changcheng967/Luminex&q=Bitboard&filePattern=*.cpp
+   Response: Found in multiple files
 
-2. GET /api/file?repo=changcheng967/Luminex&path=src/evaluation.cpp&startLine=140&endLine=200
-   Response: Got full implementation with context
+2. POST /api/v2/batch
+   Body: {
+     "repo": "changcheng967/Luminex",
+     "requests": [
+       {"path": "src/bitboard.cpp", "startLine": 1, "endLine": 100},
+       {"path": "src/evaluation.cpp", "startLine": 1, "endLine": 100}
+     ]
+   }
 
-3. Explain the logic and algorithm
+3. Compare implementations side by side
 
 ---
 
-User: "What files are in the src directory?"
+User: "What's the overall structure of the codebase?"
 
 LLM Steps:
-1. GET /api/tree?repo=changcheng967/Luminex
-   Response: Full file list
+1. GET /api/stats?repo=changcheng967/Luminex
+   Response: Overview with directories and language breakdown
 
-2. Filter and present src/ files
+2. GET /api/tree?repo=changcheng967/Luminex
+   Response: Complete file list
 
----
-
-User: "Find all Bitboard-related functions"
-
-LLM Steps:
-1. GET /api/search/regex?repo=changcheng967/Luminex&q=Bitboard.*\\(
-   Response: All function declarations with Bitboard
-
-2. Present categorized results
+3. Summarize the structure
 
 
 ================================================================================
@@ -384,7 +547,9 @@ Common errors:
 - 404: File or repository not found
 - 500: Server error
 
-Check the error message for specific guidance.
+Batch endpoint specific errors:
+- Files skipped due to token budget are included with error message
+- Invalid file paths return error in that result entry
 
 
 ================================================================================
@@ -393,10 +558,12 @@ PERFORMANCE NOTES
 
 - No authentication overhead - instant access
 - Line range requests are very fast (<100ms)
+- Batch requests reduce round-trips
 - File tree is cached
-- Only changed files are re-synced (SHA-based incremental sync)
+- SHA-based incremental sync (only changed files)
 - Database optimized for full-text search
 - Auto-indexing happens on first request
+- Webhook sync updates files within seconds of push
 
 
 ================================================================================
@@ -425,18 +592,42 @@ EXAMPLE: Simple Python request
     print(response.json())
 
 
+EXAMPLE: Batch request (Python)
+    import requests
+    import json
+
+    url = "https://your-domain.com/api/v2/batch"
+    body = {
+        "repo": "changcheng967/Luminex",
+        "requests": [
+            {"path": "src/file1.cpp"},
+            {"path": "src/file2.cpp", "startLine": 1, "endLine": 50}
+        ]
+    }
+    response = requests.post(url, json=body)
+    print(response.json())
+
+
 EXAMPLE: Simple curl request
     curl "https://your-domain.com/api/file?repo=changcheng967/Luminex&path=src/evaluation.cpp&startLine=100&endLine=200"
 
 
 ================================================================================
-VERSION
+VERSION & CHANGELOG
 ================================================================================
 
-API Version: v2 (Public Access)
+API Version: v2.0
 Repository: Luminex - High-performance ML inference framework
 Owner: changcheng967
 Last Updated: 2025-02
+
+V2 CHANGES:
+- Added /api/v2/batch endpoint for multi-file requests
+- Enhanced /api/search with configurable context and highlighting
+- Enhanced /api/stats with file distribution and directories
+- Improved /api/sync with always-fresh data
+- Removed authentication (all endpoints public)
+- Better error handling in batch requests
 
 All endpoints are PUBLIC - no authentication required.
 

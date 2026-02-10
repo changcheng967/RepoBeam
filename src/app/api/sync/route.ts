@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
   const fullName = `${repo.owner}/${repo.name}`;
 
-  // Get repo from database
+  // Get repo from database (always fresh)
   const { data: repoData } = await supabase
     .from('repos')
     .select('*')
@@ -40,23 +40,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Repository not found' }, { status: 404 });
   }
 
-  // Get file count
+  // Get file count (always fresh)
   const { count } = await supabase
     .from('files')
     .select('*', { count: 'exact', head: true })
     .eq('repo_id', repoData.id);
 
-  const status = syncStatus.get(fullName) || { syncing: false, filesIndexed: count || 0 };
+  // Get in-memory sync status
+  const memStatus = syncStatus.get(fullName);
 
   return NextResponse.json(createResponse({
     repo: fullName,
     inDatabase: !!repoData,
-    lastSyncedAt: repoData.last_synced_at,
+    lastSyncedAt: repoData.last_synced_at, // Always fresh from DB
     lastSha: repoData.last_sha,
-    filesIndexed: count || 0,
-    currentlySyncing: status.syncing,
-    syncStartedAt: status.startedAt,
-    syncError: status.error,
+    filesIndexed: count || 0, // Always fresh count
+    currentlySyncing: memStatus?.syncing || false,
+    syncStartedAt: memStatus?.startedAt,
+    syncError: memStatus?.error,
   }, 50));
 }
 
@@ -120,19 +121,26 @@ export async function POST(request: NextRequest) {
 
   // Trigger sync in background
   syncRepo(repo.owner, repo.name, force)
-    .then(() => {
-      const status = syncStatus.get(fullName);
+    .then(async () => {
+      // Refresh from database to get accurate count
+      const { count } = await supabase
+        .from('files')
+        .select('*', { count: 'exact', head: true })
+        .eq('repo_id', repoData!.id);
+
       syncStatus.set(fullName, {
         syncing: false,
-        filesIndexed: status?.totalFiles || 0,
+        filesIndexed: count || 0,
+        totalFiles,
       });
+      console.log(`[sync] Complete for ${fullName}: ${count} files indexed`);
     })
     .catch((error) => {
       console.error(`Sync failed for ${fullName}:`, error);
-      const status = syncStatus.get(fullName);
       syncStatus.set(fullName, {
         syncing: false,
-        filesIndexed: status?.filesIndexed || 0,
+        filesIndexed: 0,
+        totalFiles,
         error: error.message,
       });
     });
