@@ -86,10 +86,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Sync changed files
+    // Sync changed files - WAIT for completion to catch errors
+    let syncError = null;
+    let filesUpdated = 0;
+
     if (changedFiles.size > 0) {
       console.log(`[webhook] Syncing ${changedFiles.size} changed files: ${Array.from(changedFiles).join(', ')}`);
-      syncFiles(repo.id, owner, name, Array.from(changedFiles)).catch(console.error);
+
+      try {
+        await syncFiles(repo.id, owner, name, Array.from(changedFiles));
+        filesUpdated = changedFiles.size;
+      } catch (error) {
+        console.error('[webhook] Sync failed:', error);
+        syncError = error instanceof Error ? error.message : String(error);
+      }
     } else {
       console.log(`[webhook] No source files changed in ${fullName}`);
     }
@@ -99,7 +109,9 @@ export async function POST(request: NextRequest) {
       repository: fullName,
       branch,
       files_added: changedFiles.size,
+      files_updated: filesUpdated,
       files_deleted: deletedFiles.size,
+      error: syncError,
     });
   } catch (error) {
     console.error('[webhook] Error:', error);
